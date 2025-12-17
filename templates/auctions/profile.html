@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+
+{% block title %}Profile - {{ user.username }}{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h4 class="mb-0">Profile</h4>
+            </div>
+            <div class="card-body">
+                <h5>{{ user.username }}</h5>
+                <p class="text-muted">{{ user.email }}</p>
+                <p><small>Member since: {{ user.date_joined|date:"M d, Y" }}</small></p>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-8">
+        <ul class="nav nav-tabs" id="profileTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="listings-tab" data-bs-toggle="tab" data-bs-target="#listings" type="button">
+                    My Listings ({{ user.listings.count }})
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="bids-tab" data-bs-toggle="tab" data-bs-target="#bids" type="button">
+                    My Bids ({{ user.bids.count }})
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="won-tab" data-bs-toggle="tab" data-bs-target="#won" type="button">
+                    Won Auctions ({{ user.won_listings.count }})
+                </button>
+            </li>
+        </ul>
+
+        <div class="tab-content mt-3" id="profileTabContent">
+            <div class="tab-pane fade show active" id="listings" role="tabpanel">
+                {% if user.listings.all %}
+                <div class="list-group">
+                    {% for listing in user.listings.all %}
+                    <a href="{% url 'listing_detail' listing.id %}" class="list-group-item list-group-item-action">
+                        <div class="d-flex w-100 justify-content-between">
+                            <h6 class="mb-1">{{ listing.title }}</h6>
+                            <small>${{ listing.current_price }}</small>
+                        </div>
+                        <small class="{% if listing.is_active %}text-success{% else %}text-muted{% endif %}">
+                            {% if listing.is_active %}Active{% else %}Closed{% endif %}
+                        </small>
+                    </a>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-muted">You haven't created any listings yet.</p>
+                <a href="{% url 'create_listing' %}" class="btn btn-primary">Create your first listing</a>
+                {% endif %}
+            </div>
+
+            <div class="tab-pane fade" id="bids" role="tabpanel">
+                {% if user.bids.all %}
+                <div class="list-group">
+                    {% for bid in user.bids.all %}
+                    <a href="{% url 'listing_detail' bid.listing.id %}" class="list-group-item list-group-item-action">
+                        <div class="d-flex w-100 justify-content-between">
+                            <h6 class="mb-1">{{ bid.listing.title }}</h6>
+                            <small>Your bid: ${{ bid.amount }}</small>
+                        </div>
+                        <small class="text-muted">{{ bid.timestamp|date:"M d, Y H:i" }}</small>
+                    </a>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-muted">You haven't placed any bids yet.</p>
+                {% endif %}
+            </div>
+
+            <div class="tab-pane fade" id="won" role="tabpanel">
+                {% if user.won_listings.all %}
+                <div class="list-group">
+                    {% for listing in user.won_listings.all %}
+                    <a href="{% url 'listing_detail' listing.id %}" class="list-group-item list-group-item-action">
+                        <div class="d-flex w-100 justify-content-between">
+                            <h6 class="mb-1">{{ listing.title }}</h6>
+                            <small>Won at: ${{ listing.current_price }}</small>
+                        </div>
+                    </a>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-muted">You haven't won any auctions yet.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,50 @@
+/* Voy a Mi - Custom Styles */
+
+body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+main {
+    flex: 1;
+}
+
+.navbar-brand {
+    font-weight: bold;
+    font-size: 1.5rem;
+}
+
+.card {
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.btn-primary {
+    background-color: #0d6efd;
+}
+
+.card-img-top {
+    object-fit: cover;
+}
+
+/* Bid history badges */
+.badge {
+    font-size: 0.9rem;
+}
+
+/* Auction timer styling */
+.timer-warning {
+    color: #dc3545;
+    font-weight: bold;
+}
+
+/* Form styling */
+.form-control:focus {
+    border-color: #0d6efd;
+    box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25);
+}

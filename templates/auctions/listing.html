@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+
+{% block title %}{{ listing.title }} - Voy a Mi{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-6">
+        {% if listing.image %}
+        <img src="{{ listing.image.url }}" class="img-fluid rounded" alt="{{ listing.title }}">
+        {% else %}
+        <div class="bg-secondary text-white d-flex align-items-center justify-content-center rounded" style="height: 400px;">
+            No Image Available
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="col-md-6">
+        <h2>{{ listing.title }}</h2>
+        <p class="text-muted">
+            Listed by <strong>{{ listing.seller.username }}</strong>
+            {% if listing.category %} in {{ listing.category.name }}{% endif %}
+        </p>
+
+        <hr>
+
+        <div class="mb-3">
+            <span class="h3 text-primary">${{ listing.current_price }}</span>
+            <span class="text-muted">(Starting: ${{ listing.starting_price }})</span>
+        </div>
+
+        <p><strong>{{ listing.bids.count }}</strong> bid(s) so far</p>
+
+        {% if listing.is_active %}
+        <p class="text-success">
+            <strong>Ends:</strong> {{ listing.end_time|date:"M d, Y H:i" }}
+        </p>
+        {% else %}
+        <p class="text-danger"><strong>Auction Closed</strong></p>
+        {% if listing.winner %}
+        <p class="alert alert-success">
+            Winner: <strong>{{ listing.winner.username }}</strong>
+            {% if listing.winner == user %}(That's you!){% endif %}
+        </p>
+        {% endif %}
+        {% endif %}
+
+        <hr>
+
+        {% if user.is_authenticated %}
+            {% if listing.is_active %}
+                {% if listing.seller != user %}
+                <!-- Bid Form -->
+                <form method="post" action="{% url 'place_bid' listing.id %}" class="mb-3">
+                    {% csrf_token %}
+                    <div class="input-group">
+                        <span class="input-group-text">$</span>
+                        <input type="number" step="0.01" min="{{ listing.current_price }}" name="bid_amount" class="form-control" placeholder="Enter your bid" required>
+                        <button type="submit" class="btn btn-success">Place Bid</button>
+                    </div>
+                    <small class="text-muted">Must be higher than ${{ listing.current_price }}</small>
+                </form>
+                {% else %}
+                <!-- Seller Actions -->
+                <form method="post" action="{% url 'close_auction' listing.id %}">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger mb-3" onclick="return confirm('Are you sure you want to close this auction?')">
+                        Close Auction
+                    </button>
+                </form>
+                {% endif %}
+            {% endif %}
+
+            <!-- Watchlist Toggle -->
+            <form method="post" action="{% url 'toggle_watchlist' listing.id %}" class="d-inline">
+                {% csrf_token %}
+                {% if is_watching %}
+                <button type="submit" class="btn btn-outline-danger">
+                    Remove from Watchlist
+                </button>
+                {% else %}
+                <button type="submit" class="btn btn-outline-primary">
+                    Add to Watchlist
+                </button>
+                {% endif %}
+            </form>
+        {% else %}
+        <p class="alert alert-info">
+            <a href="{% url 'login' %}">Login</a> to place a bid or add to watchlist.
+        </p>
+        {% endif %}
+    </div>
+</div>
+
+<hr>
+
+<div class="row mt-4">
+    <div class="col-md-8">
+        <h4>Description</h4>
+        <p>{{ listing.description|linebreaks }}</p>
+    </div>
+
+    <div class="col-md-4">
+        <h4>Bid History</h4>
+        {% if listing.bids.all %}
+        <ul class="list-group">
+            {% for bid in listing.bids.all|slice:":10" %}
+            <li class="list-group-item d-flex justify-content-between align-items-center">
+                <span>{{ bid.bidder.username }}</span>
+                <span class="badge bg-primary">${{ bid.amount }}</span>
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-muted">No bids yet. Be the first!</p>
+        {% endif %}
+    </div>
+</div>
+
+<hr>
+
+<div class="mt-4">
+    <h4>Comments</h4>
+
+    {% if user.is_authenticated %}
+    <form method="post" action="{% url 'add_comment' listing.id %}" class="mb-4">
+        {% csrf_token %}
+        <div class="mb-2">
+            <textarea name="content" class="form-control" rows="3" placeholder="Ask a question or leave a comment..." required></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary btn-sm">Post Comment</button>
+    </form>
+    {% endif %}
+
+    {% if listing.comments.all %}
+    {% for comment in listing.comments.all %}
+    <div class="card mb-2">
+        <div class="card-body">
+            <p class="mb-1">{{ comment.content }}</p>
+            <small class="text-muted">
+                {{ comment.author.username }} - {{ comment.created_at|date:"M d, Y H:i" }}
+            </small>
+        </div>
+    </div>
+    {% endfor %}
+    {% else %}
+    <p class="text-muted">No comments yet.</p>
+    {% endif %}
+</div>
+{% endblock %}
