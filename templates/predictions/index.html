@@ -1,0 +1,118 @@
+{% extends 'base.html' %}
+
+{% block title %}Voy a Mi - Prediction Markets{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <h1 class="display-5">
+            <i class="bi bi-graph-up-arrow"></i> Prediction Markets
+        </h1>
+        <p class="lead text-muted">Trade on real-world events. Put your predictions to the test.</p>
+    </div>
+</div>
+
+<!-- Popular Markets -->
+{% if popular_markets %}
+<div class="mb-5">
+    <h2 class="h4 mb-3"><i class="bi bi-fire"></i> Popular Markets</h2>
+    <div class="row g-4">
+        {% for market in popular_markets %}
+        <div class="col-md-6 col-lg-4">
+            <div class="card h-100 shadow-sm">
+                <div class="card-body">
+                    <h5 class="card-title">
+                        <a href="{% url 'predictions:market_detail' market.pk %}" class="text-decoration-none">
+                            {{ market.title }}
+                        </a>
+                    </h5>
+                    <p class="text-muted small mb-3">{{ market.event.title }}</p>
+
+                    <div class="row text-center">
+                        <div class="col-6">
+                            <div class="p-2 bg-success bg-opacity-10 rounded">
+                                <small class="text-muted d-block">YES</small>
+                                <span class="h4 yes-color">{{ market.last_yes_price }}c</span>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="p-2 bg-danger bg-opacity-10 rounded">
+                                <small class="text-muted d-block">NO</small>
+                                <span class="h4 no-color">{{ market.last_no_price }}c</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mt-3 d-flex justify-content-between text-muted small">
+                        <span><i class="bi bi-bar-chart"></i> {{ market.total_volume }} traded</span>
+                        <span class="badge bg-{{ market.status }}">
+                            {% if market.is_trading_active %}Active{% else %}{{ market.get_status_display }}{% endif %}
+                        </span>
+                    </div>
+                </div>
+                <div class="card-footer bg-transparent">
+                    <a href="{% url 'predictions:market_detail' market.pk %}" class="btn btn-outline-primary btn-sm w-100">
+                        Trade Now
+                    </a>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Active Events -->
+{% if active_events %}
+<div class="mb-5">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2 class="h4 mb-0"><i class="bi bi-calendar-event"></i> Active Events</h2>
+        <a href="{% url 'predictions:event_list' %}" class="btn btn-outline-secondary btn-sm">View All</a>
+    </div>
+
+    <div class="list-group">
+        {% for event in active_events %}
+        <a href="{% url 'predictions:event_detail' event.slug %}" class="list-group-item list-group-item-action">
+            <div class="d-flex w-100 justify-content-between">
+                <div>
+                    <h5 class="mb-1">{{ event.title }}</h5>
+                    <p class="mb-1 text-muted">{{ event.description|truncatewords:20 }}</p>
+                    <small>
+                        {% if event.category %}
+                        <span class="badge bg-secondary">{{ event.category.name }}</span>
+                        {% endif %}
+                        <span class="badge bg-info">{{ event.markets.count }} market{{ event.markets.count|pluralize }}</span>
+                    </small>
+                </div>
+                <div class="text-end">
+                    <span class="badge bg-success">Active</span>
+                    <br>
+                    <small class="text-muted">Ends {{ event.trading_ends|date:"M d, Y" }}</small>
+                </div>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+</div>
+{% else %}
+<div class="text-center py-5">
+    <i class="bi bi-inbox display-1 text-muted"></i>
+    <h3 class="mt-3">No Active Markets</h3>
+    <p class="text-muted">Check back soon for new prediction markets!</p>
+</div>
+{% endif %}
+
+<!-- Categories -->
+{% if categories %}
+<div class="mb-5">
+    <h2 class="h4 mb-3"><i class="bi bi-tag"></i> Categories</h2>
+    <div class="d-flex flex-wrap gap-2">
+        {% for category in categories %}
+        <a href="{% url 'predictions:event_list' %}?category={{ category.slug }}" class="btn btn-outline-secondary">
+            {{ category.name }}
+        </a>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+{% endblock %}

@@ -8,7 +8,8 @@ from django.conf.urls.static import static
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('', include('auctions.urls')),
+    path('', include('predictions.urls')),  # Prediction market is the main app
+    path('auctions/', include('auctions.urls')),  # Keep auctions at /auctions/
 ]
 
 # Serve media files in development

@@ -5,6 +5,12 @@ from django.contrib import messages
 from django.db import IntegrityError
 
 from .models import User, Category, Listing, Bid, Watchlist, Comment
+from .notifications import (
+    send_outbid_notification,
+    send_auction_won_notification,
+    send_auction_ended_to_seller,
+    send_auction_lost_notification,
+)
 
 
 def index(request):
@@ -173,7 +179,15 @@ def place_bid(request, listing_id):
 
         # Check if auction has expired
         if listing.is_expired():
+            all_bidders = set(bid.bidder for bid in listing.bids.all())
             listing.close_auction()
+            # Send notifications for auto-closed auction
+            send_auction_ended_to_seller(listing)
+            if listing.winner:
+                send_auction_won_notification(listing.winner, listing)
+                for bidder in all_bidders:
+                    if bidder != listing.winner:
+                        send_auction_lost_notification(bidder, listing)
             messages.error(request, "This auction has ended.")
             return redirect("listing_detail", listing_id=listing_id)
 
@@ -187,6 +201,9 @@ def place_bid(request, listing_id):
             messages.error(request, f"Bid must be higher than ${listing.current_price}.")
             return redirect("listing_detail", listing_id=listing_id)
 
+        # Get previous highest bidder before creating new bid
+        previous_highest_bid = listing.bids.order_by('-amount').first()
+
         # Create the bid
         bid = Bid(listing=listing, bidder=request.user, amount=bid_amount)
         bid.save()
@@ -194,6 +211,10 @@ def place_bid(request, listing_id):
         # Update listing's current price
         listing.current_price = bid_amount
         listing.save()
+
+        # Send outbid notification to previous highest bidder
+        if previous_highest_bid and previous_highest_bid.bidder != request.user:
+            send_outbid_notification(previous_highest_bid.bidder, listing, bid_amount)
 
         messages.success(request, f"Bid of ${bid_amount} placed successfully!")
 
@@ -209,7 +230,21 @@ def close_auction(request, listing_id):
         messages.error(request, "You can only close your own auctions.")
         return redirect("listing_detail", listing_id=listing_id)
 
+    # Get all bidders before closing
+    all_bidders = set(bid.bidder for bid in listing.bids.all())
+
     listing.close_auction()
+
+    # Send notifications
+    send_auction_ended_to_seller(listing)
+
+    if listing.winner:
+        send_auction_won_notification(listing.winner, listing)
+        # Notify losing bidders
+        for bidder in all_bidders:
+            if bidder != listing.winner:
+                send_auction_lost_notification(bidder, listing)
+
     messages.success(request, "Auction closed successfully!")
     return redirect("listing_detail", listing_id=listing_id)
 

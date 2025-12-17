@@ -1,0 +1,414 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ market.title }} - Voy a Mi{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="{% url 'predictions:index' %}">Markets</a></li>
+        <li class="breadcrumb-item"><a href="{% url 'predictions:event_detail' event.slug %}">{{ event.title|truncatewords:3 }}</a></li>
+        <li class="breadcrumb-item active">{{ market.title|truncatewords:5 }}</li>
+    </ol>
+</nav>
+
+<div class="row">
+    <!-- Market Info & Trading -->
+    <div class="col-lg-8">
+        <!-- Market Header -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <h1 class="h3 mb-2">{{ market.title }}</h1>
+                        <p class="text-muted mb-0">{{ event.title }}</p>
+                    </div>
+                    <span class="badge bg-{% if market.is_trading_active %}success{% else %}secondary{% endif %} fs-6">
+                        {% if market.is_trading_active %}Trading Active{% else %}{{ market.get_status_display }}{% endif %}
+                    </span>
+                </div>
+
+                {% if market.description %}
+                <p class="mt-3">{{ market.description }}</p>
+                {% endif %}
+
+                <!-- Current Prices -->
+                <div class="row text-center mt-4">
+                    <div class="col-6">
+                        <div class="p-3 bg-success bg-opacity-10 rounded">
+                            <small class="text-muted d-block">YES</small>
+                            <span class="price-display yes-color">{{ market.last_yes_price }}c</span>
+                            <small class="text-muted d-block">{{ market.yes_probability|floatformat:0 }}% implied</small>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="p-3 bg-danger bg-opacity-10 rounded">
+                            <small class="text-muted d-block">NO</small>
+                            <span class="price-display no-color">{{ market.last_no_price }}c</span>
+                            <small class="text-muted d-block">{{ market.last_no_price }}% implied</small>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row mt-3 text-center text-muted small">
+                    <div class="col-4">
+                        <i class="bi bi-bar-chart"></i> {{ market.total_volume }} traded
+                    </div>
+                    <div class="col-4">
+                        <i class="bi bi-clock"></i> Ends {{ event.trading_ends|date:"M d, Y" }}
+                    </div>
+                    <div class="col-4">
+                        {% if market.spread %}
+                        <i class="bi bi-arrows-expand"></i> {{ market.spread }}c spread
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Trading Interface -->
+        {% if market.is_trading_active %}
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-lightning"></i> Place Order</h5>
+            </div>
+            <div class="card-body">
+                {% if user.is_authenticated %}
+                <form method="post" action="{% url 'predictions:place_order' market.pk %}">
+                    {% csrf_token %}
+
+                    <!-- Order Side -->
+                    <div class="mb-3">
+                        <label class="form-label">Action</label>
+                        <div class="btn-group w-100" role="group">
+                            <input type="radio" class="btn-check" name="side" id="side_buy" value="buy" checked>
+                            <label class="btn btn-outline-success" for="side_buy">Buy</label>
+
+                            <input type="radio" class="btn-check" name="side" id="side_sell" value="sell">
+                            <label class="btn btn-outline-danger" for="side_sell">Sell</label>
+                        </div>
+                    </div>
+
+                    <!-- Contract Type -->
+                    <div class="mb-3">
+                        <label class="form-label">Contract</label>
+                        <div class="btn-group w-100" role="group">
+                            <input type="radio" class="btn-check" name="contract_type" id="type_yes" value="yes" checked>
+                            <label class="btn btn-outline-success" for="type_yes">
+                                YES @ {{ market.best_yes_ask|default:market.last_yes_price }}c
+                            </label>
+
+                            <input type="radio" class="btn-check" name="contract_type" id="type_no" value="no">
+                            <label class="btn btn-outline-danger" for="type_no">
+                                NO @ {{ market.best_no_ask|default:market.last_no_price }}c
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <!-- Price -->
+                        <div class="col-6 mb-3">
+                            <label class="form-label">Price (1-99c)</label>
+                            <div class="input-group">
+                                <input type="number" class="form-control" name="price"
+                                       min="1" max="99" value="{{ market.last_yes_price }}" required>
+                                <span class="input-group-text">c</span>
+                            </div>
+                        </div>
+
+                        <!-- Quantity -->
+                        <div class="col-6 mb-3">
+                            <label class="form-label">Quantity</label>
+                            <input type="number" class="form-control" name="quantity"
+                                   min="1" value="10" required>
+                        </div>
+                    </div>
+
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <span class="text-muted">
+                            Available: <strong>${{ user.available_balance|floatformat:2 }}</strong>
+                        </span>
+                        <span class="text-muted" id="order_cost">
+                            Max Cost: <strong>$0.00</strong>
+                        </span>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary btn-lg w-100">
+                        <i class="bi bi-check-circle"></i> Place Order
+                    </button>
+                </form>
+                {% else %}
+                <div class="text-center py-4">
+                    <p class="mb-3">You need to be logged in to trade.</p>
+                    <a href="{% url 'login' %}" class="btn btn-primary">Login to Trade</a>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Orderbook -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-book"></i> Orderbook</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <!-- YES Orderbook -->
+                    <div class="col-6">
+                        <h6 class="text-center yes-color">YES</h6>
+                        <table class="table table-sm table-hover mb-0">
+                            <thead>
+                                <tr class="small text-muted">
+                                    <th>Bid</th>
+                                    <th class="text-end">Qty</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for level in orderbook.yes_bids %}
+                                <tr class="orderbook-row bg-success bg-opacity-10">
+                                    <td class="yes-color">{{ level.price }}c</td>
+                                    <td class="text-end">{{ level.quantity }}</td>
+                                </tr>
+                                {% empty %}
+                                <tr><td colspan="2" class="text-muted text-center">No bids</td></tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                        <hr>
+                        <table class="table table-sm table-hover mb-0">
+                            <thead>
+                                <tr class="small text-muted">
+                                    <th>Ask</th>
+                                    <th class="text-end">Qty</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for level in orderbook.yes_asks %}
+                                <tr class="orderbook-row">
+                                    <td>{{ level.price }}c</td>
+                                    <td class="text-end">{{ level.quantity }}</td>
+                                </tr>
+                                {% empty %}
+                                <tr><td colspan="2" class="text-muted text-center">No asks</td></tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- NO Orderbook -->
+                    <div class="col-6">
+                        <h6 class="text-center no-color">NO</h6>
+                        <table class="table table-sm table-hover mb-0">
+                            <thead>
+                                <tr class="small text-muted">
+                                    <th>Bid</th>
+                                    <th class="text-end">Qty</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for level in orderbook.no_bids %}
+                                <tr class="orderbook-row bg-danger bg-opacity-10">
+                                    <td class="no-color">{{ level.price }}c</td>
+                                    <td class="text-end">{{ level.quantity }}</td>
+                                </tr>
+                                {% empty %}
+                                <tr><td colspan="2" class="text-muted text-center">No bids</td></tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                        <hr>
+                        <table class="table table-sm table-hover mb-0">
+                            <thead>
+                                <tr class="small text-muted">
+                                    <th>Ask</th>
+                                    <th class="text-end">Qty</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for level in orderbook.no_asks %}
+                                <tr class="orderbook-row">
+                                    <td>{{ level.price }}c</td>
+                                    <td class="text-end">{{ level.quantity }}</td>
+                                </tr>
+                                {% empty %}
+                                <tr><td colspan="2" class="text-muted text-center">No asks</td></tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Trades -->
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-clock-history"></i> Recent Trades</h5>
+            </div>
+            <div class="card-body">
+                {% if recent_trades %}
+                <table class="table table-sm table-hover">
+                    <thead>
+                        <tr class="small text-muted">
+                            <th>Time</th>
+                            <th>Type</th>
+                            <th>Price</th>
+                            <th class="text-end">Qty</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for trade in recent_trades %}
+                        <tr class="orderbook-row">
+                            <td>{{ trade.executed_at|date:"H:i:s" }}</td>
+                            <td>
+                                <span class="badge {% if trade.contract_type == 'yes' %}bg-success{% else %}bg-danger{% endif %}">
+                                    {{ trade.contract_type|upper }}
+                                </span>
+                            </td>
+                            <td>{{ trade.price }}c</td>
+                            <td class="text-end">{{ trade.quantity }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <p class="text-muted text-center mb-0">No trades yet</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="col-lg-4">
+        <!-- User Position -->
+        {% if user.is_authenticated and user_position and user_position.has_position %}
+        <div class="card mb-4 position-card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-briefcase"></i> Your Position</h5>
+            </div>
+            <div class="card-body">
+                {% if user_position.yes_quantity > 0 %}
+                <div class="d-flex justify-content-between mb-2">
+                    <span class="yes-color"><strong>YES</strong></span>
+                    <span>{{ user_position.yes_quantity }} contracts @ {{ user_position.yes_avg_cost|floatformat:1 }}c avg</span>
+                </div>
+                {% endif %}
+                {% if user_position.no_quantity > 0 %}
+                <div class="d-flex justify-content-between mb-2">
+                    <span class="no-color"><strong>NO</strong></span>
+                    <span>{{ user_position.no_quantity }} contracts @ {{ user_position.no_avg_cost|floatformat:1 }}c avg</span>
+                </div>
+                {% endif %}
+                <hr>
+                <div class="d-flex justify-content-between">
+                    <span>Unrealized P&L</span>
+                    <span class="{% if user_position.total_unrealized_pnl >= 0 %}text-success{% else %}text-danger{% endif %}">
+                        {% if user_position.total_unrealized_pnl >= 0 %}+{% endif %}${{ user_position.total_unrealized_pnl|floatformat:2 }}
+                    </span>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- User's Open Orders -->
+        {% if user.is_authenticated and user_orders %}
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-list-check"></i> Your Orders</h5>
+            </div>
+            <div class="list-group list-group-flush">
+                {% for order in user_orders %}
+                <div class="list-group-item d-flex justify-content-between align-items-center">
+                    <div>
+                        <span class="badge {% if order.side == 'buy' %}bg-success{% else %}bg-danger{% endif %}">
+                            {{ order.side|upper }}
+                        </span>
+                        <span class="badge {% if order.contract_type == 'yes' %}bg-success{% else %}bg-danger{% endif %}">
+                            {{ order.contract_type|upper }}
+                        </span>
+                        <span class="ms-2">{{ order.remaining_quantity }} @ {{ order.price }}c</span>
+                    </div>
+                    <form method="post" action="{% url 'predictions:cancel_order' order.pk %}" class="d-inline">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Cancel this order?')">
+                            <i class="bi bi-x"></i>
+                        </button>
+                    </form>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Market Stats -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-graph-up"></i> Market Stats</h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-sm mb-0">
+                    <tr>
+                        <td class="text-muted">Best YES Bid</td>
+                        <td class="text-end">{{ market.best_yes_bid|default:"-" }}c</td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Best YES Ask</td>
+                        <td class="text-end">{{ market.best_yes_ask|default:"-" }}c</td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Best NO Bid</td>
+                        <td class="text-end">{{ market.best_no_bid|default:"-" }}c</td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Best NO Ask</td>
+                        <td class="text-end">{{ market.best_no_ask|default:"-" }}c</td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Total Volume</td>
+                        <td class="text-end">{{ market.total_volume }}</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+
+        <!-- Event Info -->
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-info-circle"></i> Event Info</h5>
+            </div>
+            <div class="card-body">
+                <h6><a href="{% url 'predictions:event_detail' event.slug %}">{{ event.title }}</a></h6>
+                <p class="small text-muted">{{ event.description|truncatewords:30 }}</p>
+                <hr>
+                <small class="text-muted d-block">
+                    <strong>Resolution Source:</strong> {{ event.resolution_source }}
+                </small>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Calculate order cost dynamically
+document.addEventListener('DOMContentLoaded', function() {
+    const priceInput = document.querySelector('input[name="price"]');
+    const quantityInput = document.querySelector('input[name="quantity"]');
+    const costDisplay = document.getElementById('order_cost');
+
+    function updateCost() {
+        if (priceInput && quantityInput && costDisplay) {
+            const price = parseInt(priceInput.value) || 0;
+            const quantity = parseInt(quantityInput.value) || 0;
+            const cost = (price * quantity / 100).toFixed(2);
+            costDisplay.innerHTML = 'Max Cost: <strong>$' + cost + '</strong>';
+        }
+    }
+
+    if (priceInput) priceInput.addEventListener('input', updateCost);
+    if (quantityInput) quantityInput.addEventListener('input', updateCost);
+    updateCost();
+});
+</script>
+{% endblock %}

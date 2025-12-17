@@ -1,0 +1,107 @@
+{% extends 'base.html' %}
+
+{% block title %}Order History - Voy a Mi{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <h1><i class="bi bi-list-check"></i> Order History</h1>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3">
+            <div class="col-md-4">
+                <label class="form-label">Status</label>
+                <select name="status" class="form-select" onchange="this.form.submit()">
+                    <option value="">All Statuses</option>
+                    <option value="open" {% if selected_status == 'open' %}selected{% endif %}>Open</option>
+                    <option value="partial" {% if selected_status == 'partial' %}selected{% endif %}>Partially Filled</option>
+                    <option value="filled" {% if selected_status == 'filled' %}selected{% endif %}>Filled</option>
+                    <option value="cancelled" {% if selected_status == 'cancelled' %}selected{% endif %}>Cancelled</option>
+                </select>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Orders Table -->
+<div class="card">
+    {% if orders %}
+    <div class="table-responsive">
+        <table class="table table-hover mb-0">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Market</th>
+                    <th>Side</th>
+                    <th>Type</th>
+                    <th class="text-center">Price</th>
+                    <th class="text-center">Qty</th>
+                    <th class="text-center">Filled</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for order in orders %}
+                <tr>
+                    <td>{{ order.created_at|date:"M d, H:i" }}</td>
+                    <td>
+                        <a href="{% url 'predictions:market_detail' order.market.pk %}">
+                            {{ order.market.title|truncatewords:4 }}
+                        </a>
+                    </td>
+                    <td>
+                        <span class="badge {% if order.side == 'buy' %}bg-success{% else %}bg-danger{% endif %}">
+                            {{ order.side|upper }}
+                        </span>
+                    </td>
+                    <td>
+                        <span class="badge {% if order.contract_type == 'yes' %}bg-success{% else %}bg-danger{% endif %}">
+                            {{ order.contract_type|upper }}
+                        </span>
+                    </td>
+                    <td class="text-center">{{ order.price }}c</td>
+                    <td class="text-center">{{ order.quantity }}</td>
+                    <td class="text-center">{{ order.filled_quantity }}</td>
+                    <td>
+                        {% if order.status == 'open' %}
+                        <span class="badge bg-primary">Open</span>
+                        {% elif order.status == 'partial' %}
+                        <span class="badge bg-info">Partial</span>
+                        {% elif order.status == 'filled' %}
+                        <span class="badge bg-success">Filled</span>
+                        {% elif order.status == 'cancelled' %}
+                        <span class="badge bg-secondary">Cancelled</span>
+                        {% else %}
+                        <span class="badge bg-secondary">{{ order.get_status_display }}</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if order.is_active %}
+                        <form method="post" action="{% url 'predictions:cancel_order' order.pk %}" class="d-inline">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Cancel this order?')">
+                                Cancel
+                            </button>
+                        </form>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="card-body text-center py-5">
+        <i class="bi bi-inbox display-1 text-muted"></i>
+        <h3 class="mt-3">No Orders</h3>
+        <p class="text-muted">You haven't placed any orders yet.</p>
+        <a href="{% url 'predictions:index' %}" class="btn btn-primary">Browse Markets</a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

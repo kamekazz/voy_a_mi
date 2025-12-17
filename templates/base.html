@@ -3,46 +3,74 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Voy a Mi - Auction Marketplace{% endblock %}</title>
+    <title>{% block title %}Voy a Mi - Prediction Market{% endblock %}</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
     {% load static %}
     <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+    <style>
+        .yes-color { color: #198754; }
+        .no-color { color: #dc3545; }
+        .yes-bg { background-color: #198754; }
+        .no-bg { background-color: #dc3545; }
+        .price-display { font-size: 2rem; font-weight: bold; }
+        .orderbook-row { font-family: monospace; font-size: 0.9rem; }
+        .position-card { border-left: 4px solid #0d6efd; }
+    </style>
+    {% block extra_css %}{% endblock %}
 </head>
 <body>
-    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
         <div class="container">
-            <a class="navbar-brand" href="{% url 'index' %}">Voy a Mi</a>
+            <a class="navbar-brand fw-bold" href="{% url 'predictions:index' %}">
+                <i class="bi bi-graph-up-arrow"></i> Voy a Mi
+            </a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav me-auto">
                     <li class="nav-item">
-                        <a class="nav-link" href="{% url 'index' %}">Browse</a>
+                        <a class="nav-link" href="{% url 'predictions:index' %}">Markets</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{% url 'predictions:event_list' %}">Events</a>
                     </li>
                     {% if user.is_authenticated %}
                     <li class="nav-item">
-                        <a class="nav-link" href="{% url 'create_listing' %}">Create Listing</a>
+                        <a class="nav-link" href="{% url 'predictions:portfolio' %}">Portfolio</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="{% url 'watchlist' %}">Watchlist</a>
+                        <a class="nav-link" href="{% url 'predictions:order_history' %}">Orders</a>
                     </li>
                     {% endif %}
                 </ul>
                 <ul class="navbar-nav">
                     {% if user.is_authenticated %}
                     <li class="nav-item">
-                        <a class="nav-link" href="{% url 'profile' %}">{{ user.username }}</a>
+                        <span class="nav-link text-success">
+                            <i class="bi bi-wallet2"></i> ${{ user.available_balance|floatformat:2 }}
+                        </span>
                     </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{% url 'logout' %}">Logout</a>
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">
+                            <i class="bi bi-person-circle"></i> {{ user.username }}
+                        </a>
+                        <ul class="dropdown-menu dropdown-menu-end">
+                            <li><a class="dropdown-item" href="{% url 'predictions:portfolio' %}">Portfolio</a></li>
+                            <li><a class="dropdown-item" href="{% url 'predictions:order_history' %}">Orders</a></li>
+                            <li><a class="dropdown-item" href="{% url 'predictions:trade_history' %}">Trades</a></li>
+                            <li><a class="dropdown-item" href="{% url 'predictions:transactions' %}">Transactions</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="{% url 'logout' %}">Logout</a></li>
+                        </ul>
                     </li>
                     {% else %}
                     <li class="nav-item">
                         <a class="nav-link" href="{% url 'login' %}">Login</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="{% url 'register' %}">Register</a>
+                        <a class="nav-link btn btn-outline-light btn-sm ms-2" href="{% url 'register' %}">Sign Up</a>
                     </li>
                     {% endif %}
                 </ul>
@@ -63,12 +91,14 @@
         {% block content %}{% endblock %}
     </main>
 
-    <footer class="bg-light py-4 mt-5">
+    <footer class="bg-dark text-light py-4 mt-5">
         <div class="container text-center">
-            <p class="text-muted mb-0">Voy a Mi - Market-Driven Pricing Platform</p>
+            <p class="mb-0">Voy a Mi - Prediction Market Platform</p>
+            <small class="text-muted">Trade on real-world events</small>
         </div>
     </footer>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    {% block extra_js %}{% endblock %}
 </body>
 </html>
