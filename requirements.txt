@@ -1,0 +1,26 @@
+# Django core
+Django>=4.2,<5.0
+
+# Database
+psycopg2-binary>=2.9.9
+
+# Real-time WebSockets
+channels>=4.0.0
+channels-redis>=4.1.0
+daphne>=4.0.0
+
+# Payment processing
+stripe>=7.0.0
+paypalrestsdk>=1.13.1
+
+# Production server
+gunicorn>=21.0.0
+
+# Image handling
+Pillow>=10.0.0
+
+# Environment variables
+python-dotenv>=1.0.0
+
+# Development tools
+django-debug-toolbar>=4.2.0
