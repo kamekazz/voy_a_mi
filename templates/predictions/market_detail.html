@@ -391,24 +391,412 @@
 
 {% block extra_js %}
 <script>
-// Calculate order cost dynamically
-document.addEventListener('DOMContentLoaded', function() {
-    const priceInput = document.querySelector('input[name="price"]');
-    const quantityInput = document.querySelector('input[name="quantity"]');
-    const costDisplay = document.getElementById('order_cost');
+(function() {
+    'use strict';
 
-    function updateCost() {
-        if (priceInput && quantityInput && costDisplay) {
-            const price = parseInt(priceInput.value) || 0;
-            const quantity = parseInt(quantityInput.value) || 0;
-            const cost = (price * quantity / 100).toFixed(2);
-            costDisplay.innerHTML = 'Max Cost: <strong>$' + cost + '</strong>';
+    // Configuration
+    const MARKET_ID = {{ market.pk }};
+    const WS_URL = (window.location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + window.location.host + '/ws/market/' + MARKET_ID + '/';
+    const RECONNECT_DELAY = 3000;
+    const MAX_RECONNECT_ATTEMPTS = 10;
+
+    let ws = null;
+    let reconnectAttempts = 0;
+    let reconnectTimeout = null;
+
+    // Connect to WebSocket
+    function connect() {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            return;
+        }
+
+        console.log('[WS] Connecting to:', WS_URL);
+        ws = new WebSocket(WS_URL);
+
+        ws.onopen = function() {
+            console.log('[WS] Connected');
+            reconnectAttempts = 0;
+            showConnectionStatus('connected');
+        };
+
+        ws.onmessage = function(event) {
+            try {
+                const message = JSON.parse(event.data);
+                handleMessage(message);
+            } catch (e) {
+                console.error('[WS] Error parsing message:', e);
+            }
+        };
+
+        ws.onclose = function(event) {
+            console.log('[WS] Disconnected:', event.code, event.reason);
+            showConnectionStatus('disconnected');
+            scheduleReconnect();
+        };
+
+        ws.onerror = function(error) {
+            console.error('[WS] Error:', error);
+        };
+    }
+
+    // Schedule reconnection
+    function scheduleReconnect() {
+        if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+            console.log('[WS] Max reconnect attempts reached');
+            showConnectionStatus('failed');
+            return;
+        }
+
+        reconnectAttempts++;
+        const delay = RECONNECT_DELAY * Math.min(reconnectAttempts, 5);
+        console.log('[WS] Reconnecting in ' + delay + 'ms (attempt ' + reconnectAttempts + ')');
+
+        clearTimeout(reconnectTimeout);
+        reconnectTimeout = setTimeout(connect, delay);
+    }
+
+    // Handle incoming messages
+    function handleMessage(message) {
+        switch (message.type) {
+            case 'initial_state':
+                updateMarketState(message.data);
+                updateOrderbook(message.data.orderbook);
+                break;
+            case 'market_update':
+                updateMarketState(message.data);
+                break;
+            case 'trade_executed':
+                addTradeToHistory(message.data);
+                highlightPriceChange(message.data.contract_type);
+                break;
+            case 'orderbook_update':
+                updateOrderbook(message.data.orderbook);
+                break;
+            case 'pong':
+                break;
+            default:
+                console.log('[WS] Unknown message type:', message.type);
         }
     }
 
-    if (priceInput) priceInput.addEventListener('input', updateCost);
-    if (quantityInput) quantityInput.addEventListener('input', updateCost);
-    updateCost();
-});
+    // Update market prices and stats
+    function updateMarketState(data) {
+        // Update YES price
+        const yesPrice = document.querySelector('.bg-success.bg-opacity-10 .price-display');
+        if (yesPrice && data.last_yes_price !== undefined) {
+            const oldValue = yesPrice.textContent;
+            yesPrice.textContent = data.last_yes_price + 'c';
+            if (oldValue !== yesPrice.textContent) {
+                flashElement(yesPrice);
+            }
+        }
+
+        // Update NO price
+        const noPrice = document.querySelector('.bg-danger.bg-opacity-10 .price-display');
+        if (noPrice && data.last_no_price !== undefined) {
+            const oldValue = noPrice.textContent;
+            noPrice.textContent = data.last_no_price + 'c';
+            if (oldValue !== noPrice.textContent) {
+                flashElement(noPrice);
+            }
+        }
+
+        // Update implied probabilities
+        const yesImplied = document.querySelector('.bg-success.bg-opacity-10 small:last-child');
+        if (yesImplied && data.last_yes_price !== undefined) {
+            yesImplied.textContent = data.last_yes_price + '% implied';
+        }
+        const noImplied = document.querySelector('.bg-danger.bg-opacity-10 small:last-child');
+        if (noImplied && data.last_no_price !== undefined) {
+            noImplied.textContent = data.last_no_price + '% implied';
+        }
+
+        // Update Market Stats sidebar
+        updateMarketStats(data);
+    }
+
+    // Update Market Stats sidebar
+    function updateMarketStats(data) {
+        const statsTable = document.querySelector('.card:has(.bi-graph-up) table');
+        if (!statsTable) return;
+
+        const rows = statsTable.querySelectorAll('tr');
+        rows.forEach(function(row) {
+            const label = row.querySelector('td:first-child');
+            const valueCell = row.querySelector('td:last-child');
+            if (!label || !valueCell) return;
+
+            const labelText = label.textContent.trim();
+            const formatValue = function(val) { return val !== null && val !== undefined ? val + 'c' : '-'; };
+
+            if (labelText === 'Best YES Bid') {
+                valueCell.textContent = formatValue(data.best_yes_bid);
+            } else if (labelText === 'Best YES Ask') {
+                valueCell.textContent = formatValue(data.best_yes_ask);
+            } else if (labelText === 'Best NO Bid') {
+                valueCell.textContent = formatValue(data.best_no_bid);
+            } else if (labelText === 'Best NO Ask') {
+                valueCell.textContent = formatValue(data.best_no_ask);
+            } else if (labelText === 'Total Volume' && data.total_volume !== undefined) {
+                valueCell.textContent = data.total_volume;
+            }
+        });
+    }
+
+    // Update orderbook display
+    function updateOrderbook(orderbook) {
+        if (!orderbook) return;
+
+        // Helper to render orderbook levels
+        function renderLevels(tableSelector, levels, isBid, emptyText) {
+            const tables = document.querySelectorAll(tableSelector);
+            if (tables.length === 0) return;
+
+            const tbody = tables[0].querySelector('tbody');
+            if (!tbody) return;
+
+            if (!levels || levels.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="2" class="text-muted text-center">' + emptyText + '</td></tr>';
+                return;
+            }
+
+            let html = '';
+            levels.forEach(function(level) {
+                const rowClass = isBid ? 'orderbook-row bg-success bg-opacity-10' : 'orderbook-row';
+                html += '<tr class="' + rowClass + '">';
+                html += '<td>' + level.price + 'c</td>';
+                html += '<td class="text-end">' + level.quantity + '</td>';
+                html += '</tr>';
+            });
+            tbody.innerHTML = html;
+        }
+
+        // YES orderbook (left column)
+        const leftCol = document.querySelector('.col-6:first-child');
+        if (leftCol) {
+            const tables = leftCol.querySelectorAll('table');
+            if (tables.length >= 2) {
+                // First table is bids
+                const bidsTbody = tables[0].querySelector('tbody');
+                if (bidsTbody) {
+                    if (orderbook.yes_bids && orderbook.yes_bids.length > 0) {
+                        let html = '';
+                        orderbook.yes_bids.forEach(function(level) {
+                            html += '<tr class="orderbook-row bg-success bg-opacity-10">';
+                            html += '<td class="yes-color">' + level.price + 'c</td>';
+                            html += '<td class="text-end">' + level.quantity + '</td>';
+                            html += '</tr>';
+                        });
+                        bidsTbody.innerHTML = html;
+                    } else {
+                        bidsTbody.innerHTML = '<tr><td colspan="2" class="text-muted text-center">No bids</td></tr>';
+                    }
+                }
+                // Second table is asks
+                const asksTbody = tables[1].querySelector('tbody');
+                if (asksTbody) {
+                    if (orderbook.yes_asks && orderbook.yes_asks.length > 0) {
+                        let html = '';
+                        orderbook.yes_asks.forEach(function(level) {
+                            html += '<tr class="orderbook-row">';
+                            html += '<td>' + level.price + 'c</td>';
+                            html += '<td class="text-end">' + level.quantity + '</td>';
+                            html += '</tr>';
+                        });
+                        asksTbody.innerHTML = html;
+                    } else {
+                        asksTbody.innerHTML = '<tr><td colspan="2" class="text-muted text-center">No asks</td></tr>';
+                    }
+                }
+            }
+        }
+
+        // NO orderbook (right column)
+        const rightCol = document.querySelector('.col-6:last-child');
+        if (rightCol) {
+            const tables = rightCol.querySelectorAll('table');
+            if (tables.length >= 2) {
+                // First table is bids
+                const bidsTbody = tables[0].querySelector('tbody');
+                if (bidsTbody) {
+                    if (orderbook.no_bids && orderbook.no_bids.length > 0) {
+                        let html = '';
+                        orderbook.no_bids.forEach(function(level) {
+                            html += '<tr class="orderbook-row bg-danger bg-opacity-10">';
+                            html += '<td class="no-color">' + level.price + 'c</td>';
+                            html += '<td class="text-end">' + level.quantity + '</td>';
+                            html += '</tr>';
+                        });
+                        bidsTbody.innerHTML = html;
+                    } else {
+                        bidsTbody.innerHTML = '<tr><td colspan="2" class="text-muted text-center">No bids</td></tr>';
+                    }
+                }
+                // Second table is asks
+                const asksTbody = tables[1].querySelector('tbody');
+                if (asksTbody) {
+                    if (orderbook.no_asks && orderbook.no_asks.length > 0) {
+                        let html = '';
+                        orderbook.no_asks.forEach(function(level) {
+                            html += '<tr class="orderbook-row">';
+                            html += '<td>' + level.price + 'c</td>';
+                            html += '<td class="text-end">' + level.quantity + '</td>';
+                            html += '</tr>';
+                        });
+                        asksTbody.innerHTML = html;
+                    } else {
+                        asksTbody.innerHTML = '<tr><td colspan="2" class="text-muted text-center">No asks</td></tr>';
+                    }
+                }
+            }
+        }
+    }
+
+    // Add new trade to recent trades
+    function addTradeToHistory(trade) {
+        const tradesCard = document.querySelector('.card:has(.bi-clock-history)');
+        if (!tradesCard) return;
+
+        let tbody = tradesCard.querySelector('tbody');
+        const noTradesMsg = tradesCard.querySelector('.text-muted.text-center');
+
+        // If there was a "No trades yet" message, create table
+        if (noTradesMsg && !tbody) {
+            const cardBody = tradesCard.querySelector('.card-body');
+            cardBody.innerHTML =
+                '<table class="table table-sm table-hover">' +
+                '<thead><tr class="small text-muted">' +
+                '<th>Time</th><th>Type</th><th>Price</th><th class="text-end">Qty</th>' +
+                '</tr></thead><tbody></tbody></table>';
+            tbody = cardBody.querySelector('tbody');
+        }
+
+        if (!tbody) return;
+
+        // Format time from ISO string
+        const time = new Date(trade.executed_at);
+        const timeStr = time.toLocaleTimeString('en-US', {
+            hour12: false,
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+        });
+
+        // Create new row
+        const newRow = document.createElement('tr');
+        newRow.className = 'orderbook-row';
+        const badgeClass = trade.contract_type === 'yes' ? 'bg-success' : 'bg-danger';
+        newRow.innerHTML =
+            '<td>' + timeStr + '</td>' +
+            '<td><span class="badge ' + badgeClass + '">' + trade.contract_type.toUpperCase() + '</span></td>' +
+            '<td>' + trade.price + 'c</td>' +
+            '<td class="text-end">' + trade.quantity + '</td>';
+
+        // Flash effect
+        newRow.style.backgroundColor = 'rgba(255, 193, 7, 0.3)';
+        setTimeout(function() {
+            newRow.style.transition = 'background-color 1s ease';
+            newRow.style.backgroundColor = '';
+        }, 100);
+
+        // Add to top of table
+        tbody.insertBefore(newRow, tbody.firstChild);
+
+        // Limit to 20 rows
+        while (tbody.children.length > 20) {
+            tbody.removeChild(tbody.lastChild);
+        }
+    }
+
+    // Visual feedback for price changes
+    function flashElement(element) {
+        if (!element) return;
+        element.style.transition = 'none';
+        element.style.backgroundColor = 'rgba(255, 193, 7, 0.5)';
+        setTimeout(function() {
+            element.style.transition = 'background-color 1s ease';
+            element.style.backgroundColor = '';
+        }, 100);
+    }
+
+    function highlightPriceChange(contractType) {
+        const selector = contractType === 'yes'
+            ? '.bg-success.bg-opacity-10 .price-display'
+            : '.bg-danger.bg-opacity-10 .price-display';
+        const priceEl = document.querySelector(selector);
+        flashElement(priceEl);
+    }
+
+    // Connection status indicator
+    function showConnectionStatus(status) {
+        let indicator = document.getElementById('ws-status');
+        if (!indicator) {
+            indicator = document.createElement('div');
+            indicator.id = 'ws-status';
+            indicator.style.cssText = 'position: fixed; bottom: 20px; right: 20px; padding: 8px 16px; border-radius: 4px; font-size: 12px; z-index: 9999;';
+            document.body.appendChild(indicator);
+        }
+
+        if (status === 'connected') {
+            indicator.textContent = 'Live';
+            indicator.style.backgroundColor = '#198754';
+            indicator.style.color = 'white';
+            setTimeout(function() { indicator.style.opacity = '0.5'; }, 2000);
+        } else if (status === 'disconnected') {
+            indicator.textContent = 'Reconnecting...';
+            indicator.style.backgroundColor = '#ffc107';
+            indicator.style.color = 'black';
+            indicator.style.opacity = '1';
+        } else if (status === 'failed') {
+            indicator.textContent = 'Offline - Refresh page';
+            indicator.style.backgroundColor = '#dc3545';
+            indicator.style.color = 'white';
+            indicator.style.opacity = '1';
+        }
+    }
+
+    // Calculate order cost dynamically
+    function initOrderCostCalculator() {
+        const priceInput = document.querySelector('input[name="price"]');
+        const quantityInput = document.querySelector('input[name="quantity"]');
+        const costDisplay = document.getElementById('order_cost');
+
+        function updateCost() {
+            if (priceInput && quantityInput && costDisplay) {
+                const price = parseInt(priceInput.value) || 0;
+                const quantity = parseInt(quantityInput.value) || 0;
+                const cost = (price * quantity / 100).toFixed(2);
+                costDisplay.innerHTML = 'Max Cost: <strong>$' + cost + '</strong>';
+            }
+        }
+
+        if (priceInput) priceInput.addEventListener('input', updateCost);
+        if (quantityInput) quantityInput.addEventListener('input', updateCost);
+        updateCost();
+    }
+
+    // Heartbeat to keep connection alive
+    function startHeartbeat() {
+        setInterval(function() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'ping' }));
+            }
+        }, 30000);
+    }
+
+    // Initialize on DOM ready
+    document.addEventListener('DOMContentLoaded', function() {
+        initOrderCostCalculator();
+        connect();
+        startHeartbeat();
+    });
+
+    // Cleanup on page unload
+    window.addEventListener('beforeunload', function() {
+        if (ws) {
+            ws.close();
+        }
+    });
+})();
 </script>
 {% endblock %}

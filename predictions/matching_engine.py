@@ -16,6 +16,7 @@ from .exceptions import (
     MarketNotActiveError,
     OrderCancellationError,
 )
+from .broadcasts import broadcast_market_update, broadcast_trade_executed, broadcast_orderbook_update
 
 
 class MatchingEngine:
@@ -296,6 +297,12 @@ class MatchingEngine:
         self.market.total_volume = F('total_volume') + quantity
         self.market.save()
 
+        # Refresh market to get updated total_volume for broadcasting
+        self.market.refresh_from_db()
+
+        # Broadcast the trade execution via WebSocket
+        broadcast_trade_executed(trade)
+
         # Create transaction records
         self._create_trade_transactions(trade, buyer, seller, trade_value)
 
@@ -417,6 +424,10 @@ class MatchingEngine:
         self.market.best_no_bid = best_no_bid
         self.market.best_no_ask = best_no_ask
         self.market.save()
+
+        # Broadcast market and orderbook updates via WebSocket
+        broadcast_market_update(self.market)
+        broadcast_orderbook_update(self.market)
 
     @transaction.atomic
     def cancel_order(self, order, user):
