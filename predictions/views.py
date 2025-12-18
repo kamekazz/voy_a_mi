@@ -8,10 +8,11 @@ from django.db.models import Sum, Q
 from django.utils import timezone
 from decimal import Decimal
 
-from .models import User, Category, Event, Market, Order, Trade, Position, Transaction
+from .models import User, Category, Event, Market, Order, Trade, Position, Transaction, AMMTrade
 from .forms import UserRegistrationForm
 from .forms import OrderForm, QuickOrderForm
 from .matching_engine import MatchingEngine, get_orderbook
+from .amm_engine import AMMEngine
 from .exceptions import (
     TradingError,
     InsufficientFundsError,
@@ -104,10 +105,19 @@ def market_detail(request, pk):
     # Get orderbook
     orderbook = get_orderbook(market, depth=10)
 
-    # Get recent trades
+    # Get AMM prices if enabled
+    amm_prices = None
+    if market.amm_enabled:
+        amm = AMMEngine(market)
+        amm_prices = amm.get_prices()
+
+    # Get recent trades (both orderbook and AMM)
     recent_trades = Trade.objects.filter(market=market).select_related(
         'buyer', 'seller'
     )[:20]
+    recent_amm_trades = AMMTrade.objects.filter(
+        pool__market=market
+    ).select_related('user')[:20]
 
     # Get user's position and open orders if logged in
     user_position = None
@@ -129,7 +139,9 @@ def market_detail(request, pk):
         'market': market,
         'event': market.event,
         'orderbook': orderbook,
+        'amm_prices': amm_prices,
         'recent_trades': recent_trades,
+        'recent_amm_trades': recent_amm_trades,
         'user_position': user_position,
         'user_orders': user_orders,
         'order_form': order_form,
@@ -175,31 +187,39 @@ def place_order(request, pk):
         messages.error(request, "Price is required for limit orders.")
         return redirect('predictions:market_detail', pk=pk)
 
-    # Use matching engine to place order
-    engine = MatchingEngine(market)
-
     try:
-        order, trades = engine.place_order(
-            user=request.user,
-            side=side,
-            contract_type=contract_type,
-            price=price,
-            quantity=quantity,
-            order_type=order_type
-        )
-
-        if trades:
+        # Route market orders to AMM if enabled
+        if order_type == 'market' and market.amm_enabled:
+            # Use AMM for instant execution
+            amm = AMMEngine(market)
+            trade = amm.execute_trade(
+                user=request.user,
+                side=side,
+                contract_type=contract_type,
+                quantity=quantity
+            )
             messages.success(
                 request,
-                f"Order executed! {len(trades)} trade(s), "
-                f"{order.filled_quantity} contracts filled @ {order.price}c."
+                f"Trade executed! {side.upper()} {quantity} {contract_type.upper()} "
+                f"@ {trade.avg_price:.1f}c avg (${trade.total_cost:.2f})"
             )
         else:
-            if order_type == 'market':
+            # Use limit orderbook for limit orders
+            engine = MatchingEngine(market)
+            order, trades = engine.place_order(
+                user=request.user,
+                side=side,
+                contract_type=contract_type,
+                price=price,
+                quantity=quantity,
+                order_type=order_type
+            )
+
+            if trades:
                 messages.success(
                     request,
-                    f"Market order placed: {side.upper()} {quantity} "
-                    f"{contract_type.upper()} @ {order.price}c (best available)"
+                    f"Order executed! {len(trades)} trade(s), "
+                    f"{order.filled_quantity} contracts filled @ {order.price}c."
                 )
             else:
                 messages.success(
@@ -376,6 +396,56 @@ def api_user_position(request, pk):
             'unrealized_pnl': 0,
             'realized_pnl': 0,
         })
+
+
+def api_amm_quote(request, pk):
+    """Get a quote from the AMM for a potential trade."""
+    market = get_object_or_404(Market, pk=pk)
+
+    if not market.amm_enabled:
+        return JsonResponse({'error': 'AMM not enabled for this market'}, status=400)
+
+    side = request.GET.get('side', 'buy')
+    contract_type = request.GET.get('contract_type', 'yes')
+    try:
+        quantity = int(request.GET.get('quantity', 1))
+    except ValueError:
+        return JsonResponse({'error': 'Invalid quantity'}, status=400)
+
+    if side not in ['buy', 'sell']:
+        return JsonResponse({'error': 'Invalid side'}, status=400)
+
+    if contract_type not in ['yes', 'no']:
+        return JsonResponse({'error': 'Invalid contract type'}, status=400)
+
+    amm = AMMEngine(market)
+    quote = amm.get_quote(side, contract_type, quantity)
+
+    return JsonResponse({
+        'market_id': market.pk,
+        'quote': quote,
+        'current_prices': amm.get_prices(),
+    })
+
+
+def api_amm_prices(request, pk):
+    """Get current AMM prices for a market."""
+    market = get_object_or_404(Market, pk=pk)
+
+    if not market.amm_enabled:
+        return JsonResponse({'error': 'AMM not enabled for this market'}, status=400)
+
+    amm = AMMEngine(market)
+    prices = amm.get_prices()
+
+    return JsonResponse({
+        'market_id': market.pk,
+        'yes_price': prices['yes'],
+        'no_price': prices['no'],
+        'last_yes_price': market.last_yes_price,
+        'last_no_price': market.last_no_price,
+        'total_volume': market.total_volume,
+    })
 
 
 def register(request):

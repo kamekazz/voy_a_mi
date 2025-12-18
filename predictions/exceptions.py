@@ -8,24 +8,34 @@ class TradingError(Exception):
 
 class InsufficientFundsError(TradingError):
     """Raised when user doesn't have enough balance for an order."""
-    def __init__(self, required, available):
-        self.required = required
-        self.available = available
-        super().__init__(
-            f"Insufficient funds: required ${required:.2f}, available ${available:.2f}"
-        )
+    def __init__(self, required=None, available=None, message=None):
+        if message:
+            super().__init__(message)
+        elif required is not None and available is not None:
+            self.required = required
+            self.available = available
+            super().__init__(
+                f"Insufficient funds: required ${required:.2f}, available ${available:.2f}"
+            )
+        else:
+            super().__init__(required)  # First arg is the message
 
 
 class InsufficientPositionError(TradingError):
     """Raised when user doesn't have enough contracts to sell."""
-    def __init__(self, required, available, contract_type):
-        self.required = required
-        self.available = available
-        self.contract_type = contract_type
-        super().__init__(
-            f"Insufficient {contract_type.upper()} contracts: "
-            f"required {required}, available {available}"
-        )
+    def __init__(self, required=None, available=None, contract_type=None, message=None):
+        if message:
+            super().__init__(message)
+        elif required is not None and available is not None and contract_type is not None:
+            self.required = required
+            self.available = available
+            self.contract_type = contract_type
+            super().__init__(
+                f"Insufficient {contract_type.upper()} contracts: "
+                f"required {required}, available {available}"
+            )
+        else:
+            super().__init__(required)  # First arg is the message
 
 
 class InvalidPriceError(TradingError):
@@ -48,12 +58,19 @@ class InvalidQuantityError(TradingError):
 
 class MarketNotActiveError(TradingError):
     """Raised when trying to trade on an inactive market."""
-    def __init__(self, market):
-        self.market = market
-        super().__init__(
-            f"Market '{market.title}' is not active for trading. "
-            f"Status: {market.status}"
-        )
+    def __init__(self, market=None, message=None):
+        if message:
+            super().__init__(message)
+        elif isinstance(market, str):
+            super().__init__(market)  # First arg is a message
+        elif market is not None:
+            self.market = market
+            super().__init__(
+                f"Market '{market.title}' is not active for trading. "
+                f"Status: {market.status}"
+            )
+        else:
+            super().__init__("Market is not active for trading.")
 
 
 class OrderNotFoundError(TradingError):
@@ -75,3 +92,9 @@ class SelfTradeError(TradingError):
     """Raised when a user's order would match their own order."""
     def __init__(self):
         super().__init__("Self-trading is not allowed.")
+
+
+class InsufficientLiquidityError(TradingError):
+    """Raised when AMM doesn't have enough liquidity for a trade."""
+    def __init__(self, message="Insufficient liquidity for this trade"):
+        super().__init__(message)

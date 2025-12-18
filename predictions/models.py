@@ -193,6 +193,12 @@ class Market(models.Model):
         help_text="If true, only one market in the event can settle YES"
     )
 
+    # AMM settings
+    amm_enabled = models.BooleanField(
+        default=True,
+        help_text="If true, market uses AMM for instant trades"
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -524,3 +530,132 @@ class Transaction(models.Model):
     def __str__(self):
         sign = '+' if self.amount > 0 else ''
         return f"{self.user.username}: {sign}${self.amount} ({self.get_type_display()})"
+
+
+class AMMPool(models.Model):
+    """
+    Automated Market Maker pool using LMSR (Logarithmic Market Scoring Rule).
+    Provides instant liquidity for market orders.
+    """
+    market = models.OneToOneField(
+        Market,
+        on_delete=models.CASCADE,
+        related_name='amm_pool'
+    )
+
+    # LMSR liquidity parameter - higher = more liquidity, less price impact
+    liquidity_b = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal('100.00'),
+        help_text="LMSR liquidity parameter (b)"
+    )
+
+    # Outstanding shares in the pool
+    yes_shares = models.DecimalField(
+        max_digits=15,
+        decimal_places=4,
+        default=Decimal('0.0000'),
+        help_text="Total YES shares outstanding"
+    )
+    no_shares = models.DecimalField(
+        max_digits=15,
+        decimal_places=4,
+        default=Decimal('0.0000'),
+        help_text="Total NO shares outstanding"
+    )
+
+    # Pool's accumulated funds from trades
+    pool_balance = models.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text="Pool's accumulated balance in dollars"
+    )
+
+    # Fee settings
+    fee_percentage = models.DecimalField(
+        max_digits=5,
+        decimal_places=4,
+        default=Decimal('0.0100'),  # 1% fee
+        help_text="Trading fee percentage (0.01 = 1%)"
+    )
+    total_fees_collected = models.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text="Total fees collected"
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "AMM Pool"
+        verbose_name_plural = "AMM Pools"
+
+    def __str__(self):
+        return f"AMM Pool for {self.market.title}"
+
+
+class AMMTrade(models.Model):
+    """
+    Record of a trade executed against the AMM pool.
+    """
+    class Side(models.TextChoices):
+        BUY = 'buy', 'Buy'
+        SELL = 'sell', 'Sell'
+
+    class ContractType(models.TextChoices):
+        YES = 'yes', 'Yes'
+        NO = 'no', 'No'
+
+    pool = models.ForeignKey(
+        AMMPool,
+        on_delete=models.CASCADE,
+        related_name='trades'
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='amm_trades'
+    )
+
+    side = models.CharField(max_length=4, choices=Side.choices)
+    contract_type = models.CharField(max_length=3, choices=ContractType.choices)
+
+    quantity = models.IntegerField(help_text="Number of contracts")
+
+    # Prices in cents (1-99)
+    price_before = models.IntegerField(help_text="Price before trade in cents")
+    price_after = models.IntegerField(help_text="Price after trade in cents")
+    avg_price = models.DecimalField(
+        max_digits=7,
+        decimal_places=4,
+        help_text="Average execution price in cents"
+    )
+
+    # Costs in dollars
+    total_cost = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        help_text="Total cost in dollars"
+    )
+    fee_amount = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text="Fee paid in dollars"
+    )
+
+    executed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-executed_at']
+        indexes = [
+            models.Index(fields=['pool', 'executed_at']),
+            models.Index(fields=['user', 'executed_at']),
+        ]
+
+    def __str__(self):
+        return f"{self.side.upper()} {self.quantity} {self.contract_type.upper()} @ {self.avg_price}c"

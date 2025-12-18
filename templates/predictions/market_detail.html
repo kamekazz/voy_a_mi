@@ -36,18 +36,23 @@
                     <div class="col-6">
                         <div class="p-3 bg-success bg-opacity-10 rounded">
                             <small class="text-muted d-block">YES</small>
-                            <span class="price-display yes-color">{{ market.last_yes_price }}c</span>
-                            <small class="text-muted d-block">{{ market.yes_probability|floatformat:0 }}% implied</small>
+                            <span class="price-display yes-color" id="amm-yes-price">{% if amm_prices %}{{ amm_prices.yes }}{% else %}{{ market.last_yes_price }}{% endif %}c</span>
+                            <small class="text-muted d-block">{% if amm_prices %}{{ amm_prices.yes }}{% else %}{{ market.yes_probability|floatformat:0 }}{% endif %}% implied</small>
                         </div>
                     </div>
                     <div class="col-6">
                         <div class="p-3 bg-danger bg-opacity-10 rounded">
                             <small class="text-muted d-block">NO</small>
-                            <span class="price-display no-color">{{ market.last_no_price }}c</span>
-                            <small class="text-muted d-block">{{ market.last_no_price }}% implied</small>
+                            <span class="price-display no-color" id="amm-no-price">{% if amm_prices %}{{ amm_prices.no }}{% else %}{{ market.last_no_price }}{% endif %}c</span>
+                            <small class="text-muted d-block">{% if amm_prices %}{{ amm_prices.no }}{% else %}{{ market.last_no_price }}{% endif %}% implied</small>
                         </div>
                     </div>
                 </div>
+                {% if market.amm_enabled %}
+                <div class="text-center mt-2">
+                    <span class="badge bg-info"><i class="bi bi-robot"></i> AMM Enabled - Instant Trading</span>
+                </div>
+                {% endif %}
 
                 <div class="row mt-3 text-center text-muted small">
                     <div class="col-4">
@@ -138,6 +143,27 @@
                         </div>
                     </div>
 
+                    {% if market.amm_enabled %}
+                    <!-- Live Quote Display -->
+                    <div class="card bg-light mb-3" id="quote-card">
+                        <div class="card-body py-2">
+                            <div class="row text-center">
+                                <div class="col-4">
+                                    <small class="text-muted d-block">Est. Cost</small>
+                                    <strong id="quote-cost">$0.00</strong>
+                                </div>
+                                <div class="col-4">
+                                    <small class="text-muted d-block">Avg Price</small>
+                                    <strong id="quote-avg-price">-</strong>
+                                </div>
+                                <div class="col-4">
+                                    <small class="text-muted d-block">Price Impact</small>
+                                    <strong id="quote-impact" class="text-muted">0c</strong>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% else %}
                     <div class="d-flex justify-content-between align-items-center mb-3">
                         <span class="text-muted">
                             Available: <strong>${{ user.available_balance|floatformat:2 }}</strong>
@@ -146,9 +172,16 @@
                             Max Cost: <strong>$0.00</strong>
                         </span>
                     </div>
+                    {% endif %}
 
-                    <button type="submit" class="btn btn-primary btn-lg w-100">
-                        <i class="bi bi-check-circle"></i> Place Order
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <span class="text-muted">
+                            Balance: <strong>${{ user.available_balance|floatformat:2 }}</strong>
+                        </span>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary btn-lg w-100" id="submit-btn">
+                        <i class="bi bi-check-circle"></i> <span id="submit-text">Place Order</span>
                     </button>
                 </form>
                 {% else %}
@@ -261,20 +294,39 @@
                 <h5 class="mb-0"><i class="bi bi-clock-history"></i> Recent Trades</h5>
             </div>
             <div class="card-body">
-                {% if recent_trades %}
+                {% if recent_amm_trades or recent_trades %}
                 <table class="table table-sm table-hover">
                     <thead>
                         <tr class="small text-muted">
                             <th>Time</th>
+                            <th>Side</th>
                             <th>Type</th>
                             <th>Price</th>
                             <th class="text-end">Qty</th>
                         </tr>
                     </thead>
-                    <tbody>
+                    <tbody id="trades-tbody">
+                        {% for trade in recent_amm_trades %}
+                        <tr class="orderbook-row">
+                            <td>{{ trade.executed_at|date:"H:i:s" }}</td>
+                            <td>
+                                <span class="badge {% if trade.side == 'buy' %}bg-success{% else %}bg-danger{% endif %}">
+                                    {{ trade.side|upper }}
+                                </span>
+                            </td>
+                            <td>
+                                <span class="badge {% if trade.contract_type == 'yes' %}bg-success{% else %}bg-danger{% endif %}">
+                                    {{ trade.contract_type|upper }}
+                                </span>
+                            </td>
+                            <td>{{ trade.avg_price|floatformat:1 }}c</td>
+                            <td class="text-end">{{ trade.quantity }}</td>
+                        </tr>
+                        {% endfor %}
                         {% for trade in recent_trades %}
                         <tr class="orderbook-row">
                             <td>{{ trade.executed_at|date:"H:i:s" }}</td>
+                            <td><span class="badge bg-secondary">OB</span></td>
                             <td>
                                 <span class="badge {% if trade.contract_type == 'yes' %}bg-success{% else %}bg-danger{% endif %}">
                                     {{ trade.contract_type|upper }}
@@ -411,7 +463,10 @@
 
     // Configuration
     const MARKET_ID = {{ market.pk }};
+    const AMM_ENABLED = {% if market.amm_enabled %}true{% else %}false{% endif %};
     const WS_URL = (window.location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + window.location.host + '/ws/market/' + MARKET_ID + '/';
+    const QUOTE_URL = '/api/markets/' + MARKET_ID + '/quote/';
+    const PRICES_URL = '/api/markets/' + MARKET_ID + '/prices/';
     const RECONNECT_DELAY = 3000;
     const MAX_RECONNECT_ATTEMPTS = 10;
 
@@ -870,12 +925,176 @@
         }, 30000);
     }
 
+    // AMM Quote fetching
+    let quoteTimeout = null;
+    let lastQuote = null;
+
+    function fetchAMMQuote() {
+        if (!AMM_ENABLED) return;
+
+        const sideEl = document.querySelector('input[name="side"]:checked');
+        const contractTypeEl = document.querySelector('input[name="contract_type"]:checked');
+        const quantityEl = document.querySelector('input[name="quantity"]');
+        const orderTypeEl = document.querySelector('input[name="order_type"]:checked');
+
+        if (!sideEl || !contractTypeEl || !quantityEl) return;
+
+        // Only fetch quote for market orders
+        if (orderTypeEl && orderTypeEl.value !== 'market') {
+            // For limit orders, use simple cost calculation
+            const price = parseInt(document.getElementById('price_input').value) || 50;
+            const quantity = parseInt(quantityEl.value) || 0;
+            const cost = (price * quantity / 100).toFixed(2);
+
+            const quoteCost = document.getElementById('quote-cost');
+            const quoteAvg = document.getElementById('quote-avg-price');
+            const quoteImpact = document.getElementById('quote-impact');
+
+            if (quoteCost) quoteCost.textContent = '$' + cost;
+            if (quoteAvg) quoteAvg.textContent = price + 'c';
+            if (quoteImpact) {
+                quoteImpact.textContent = '0c';
+                quoteImpact.className = 'text-muted';
+            }
+            return;
+        }
+
+        const side = sideEl.value;
+        const contractType = contractTypeEl.value;
+        const quantity = parseInt(quantityEl.value) || 0;
+
+        if (quantity <= 0) return;
+
+        // Debounce API calls
+        clearTimeout(quoteTimeout);
+        quoteTimeout = setTimeout(function() {
+            const url = QUOTE_URL + '?side=' + side + '&contract_type=' + contractType + '&quantity=' + quantity;
+
+            fetch(url)
+                .then(function(response) { return response.json(); })
+                .then(function(data) {
+                    if (data.error) {
+                        console.error('Quote error:', data.error);
+                        return;
+                    }
+                    lastQuote = data.quote;
+                    updateQuoteDisplay(data.quote, data.current_prices);
+                })
+                .catch(function(error) {
+                    console.error('Error fetching quote:', error);
+                });
+        }, 300);
+    }
+
+    function updateQuoteDisplay(quote, prices) {
+        const quoteCost = document.getElementById('quote-cost');
+        const quoteAvg = document.getElementById('quote-avg-price');
+        const quoteImpact = document.getElementById('quote-impact');
+        const submitText = document.getElementById('submit-text');
+
+        if (quoteCost) {
+            quoteCost.textContent = '$' + quote.total.toFixed(2);
+        }
+
+        if (quoteAvg) {
+            quoteAvg.textContent = quote.avg_price.toFixed(1) + 'c';
+        }
+
+        if (quoteImpact) {
+            const impact = quote.price_impact;
+            if (impact > 0) {
+                quoteImpact.textContent = '+' + impact + 'c';
+                quoteImpact.className = 'text-danger';
+            } else if (impact < 0) {
+                quoteImpact.textContent = impact + 'c';
+                quoteImpact.className = 'text-success';
+            } else {
+                quoteImpact.textContent = '0c';
+                quoteImpact.className = 'text-muted';
+            }
+        }
+
+        if (submitText) {
+            const side = quote.side.charAt(0).toUpperCase() + quote.side.slice(1);
+            submitText.textContent = side + ' ' + quote.quantity + ' ' + quote.contract_type.toUpperCase() + ' for $' + quote.total.toFixed(2);
+        }
+
+        // Update main price display
+        const yesPrice = document.getElementById('amm-yes-price');
+        const noPrice = document.getElementById('amm-no-price');
+        if (yesPrice && prices) yesPrice.textContent = prices.yes + 'c';
+        if (noPrice && prices) noPrice.textContent = prices.no + 'c';
+    }
+
+    function initAMMQuotes() {
+        if (!AMM_ENABLED) return;
+
+        const sideInputs = document.querySelectorAll('input[name="side"]');
+        const contractInputs = document.querySelectorAll('input[name="contract_type"]');
+        const quantityInput = document.querySelector('input[name="quantity"]');
+        const orderTypeInputs = document.querySelectorAll('input[name="order_type"]');
+
+        sideInputs.forEach(function(input) {
+            input.addEventListener('change', fetchAMMQuote);
+        });
+        contractInputs.forEach(function(input) {
+            input.addEventListener('change', fetchAMMQuote);
+        });
+        orderTypeInputs.forEach(function(input) {
+            input.addEventListener('change', fetchAMMQuote);
+        });
+        if (quantityInput) {
+            quantityInput.addEventListener('input', fetchAMMQuote);
+        }
+
+        // Initial quote fetch
+        fetchAMMQuote();
+    }
+
+    // Periodically refresh AMM prices
+    function startPriceRefresh() {
+        if (!AMM_ENABLED) return;
+
+        setInterval(function() {
+            fetch(PRICES_URL)
+                .then(function(response) { return response.json(); })
+                .then(function(data) {
+                    if (data.error) return;
+
+                    const yesPrice = document.getElementById('amm-yes-price');
+                    const noPrice = document.getElementById('amm-no-price');
+
+                    if (yesPrice) {
+                        const oldVal = yesPrice.textContent;
+                        const newVal = data.yes_price + 'c';
+                        if (oldVal !== newVal) {
+                            yesPrice.textContent = newVal;
+                            flashElement(yesPrice);
+                        }
+                    }
+                    if (noPrice) {
+                        const oldVal = noPrice.textContent;
+                        const newVal = data.no_price + 'c';
+                        if (oldVal !== newVal) {
+                            noPrice.textContent = newVal;
+                            flashElement(noPrice);
+                        }
+                    }
+                })
+                .catch(function(error) {
+                    console.error('Error fetching prices:', error);
+                });
+        }, 5000);  // Refresh every 5 seconds
+    }
+
     // Initialize on DOM ready
     document.addEventListener('DOMContentLoaded', function() {
         initOrderTypeToggle();
         initOrderCostCalculator();
+        initAMMQuotes();
         connect();
         startHeartbeat();
+        startPriceRefresh();
     });
 
     // Cleanup on page unload

@@ -24,4 +24,8 @@ urlpatterns = [
     path('api/markets/<int:pk>/orderbook/', views.api_orderbook, name='api_orderbook'),
     path('api/markets/<int:pk>/trades/', views.api_recent_trades, name='api_recent_trades'),
     path('api/markets/<int:pk>/position/', views.api_user_position, name='api_user_position'),
+
+    # AMM API endpoints
+    path('api/markets/<int:pk>/quote/', views.api_amm_quote, name='api_amm_quote'),
+    path('api/markets/<int:pk>/prices/', views.api_amm_prices, name='api_amm_prices'),
 ]
