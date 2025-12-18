@@ -203,8 +203,60 @@ def place_order(request, pk):
                 f"Trade executed! {side.upper()} {quantity} {contract_type.upper()} "
                 f"@ {trade.avg_price:.1f}c avg (${trade.total_cost:.2f})"
             )
+        elif order_type == 'limit' and market.amm_enabled:
+            # For limit orders, check if AMM offers a better price
+            amm = AMMEngine(market)
+            amm_price = amm.get_price(contract_type)
+
+            # Determine if AMM price is better than limit price
+            # BUY: If user's limit >= AMM price, they'd pay at most their limit, AMM is better
+            # SELL: If user's limit <= AMM price, they'd receive at least their limit, AMM is better
+            use_amm = False
+            if side == 'buy' and price >= amm_price:
+                use_amm = True
+            elif side == 'sell' and price <= amm_price:
+                use_amm = True
+
+            if use_amm:
+                # Execute through AMM for better price
+                trade = amm.execute_trade(
+                    user=request.user,
+                    side=side,
+                    contract_type=contract_type,
+                    quantity=quantity
+                )
+                messages.success(
+                    request,
+                    f"Trade executed via AMM! {side.upper()} {quantity} {contract_type.upper()} "
+                    f"@ {trade.avg_price:.1f}c avg (${trade.total_cost:.2f}) - "
+                    f"Better than your limit of {price}c"
+                )
+            else:
+                # AMM price not favorable, use orderbook
+                engine = MatchingEngine(market)
+                order, trades = engine.place_order(
+                    user=request.user,
+                    side=side,
+                    contract_type=contract_type,
+                    price=price,
+                    quantity=quantity,
+                    order_type=order_type
+                )
+
+                if trades:
+                    messages.success(
+                        request,
+                        f"Order executed! {len(trades)} trade(s), "
+                        f"{order.filled_quantity} contracts filled @ {order.price}c."
+                    )
+                else:
+                    messages.success(
+                        request,
+                        f"Limit order placed: {side.upper()} {quantity} "
+                        f"{contract_type.upper()} @ {price}c (AMM price: {amm_price}c)"
+                    )
         else:
-            # Use limit orderbook for limit orders
+            # Use limit orderbook for limit orders (AMM disabled)
             engine = MatchingEngine(market)
             order, trades = engine.place_order(
                 user=request.user,
