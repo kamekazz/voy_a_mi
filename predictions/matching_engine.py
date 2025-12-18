@@ -29,27 +29,61 @@ class MatchingEngine:
     - YES price + NO price should equal 100c (approximately)
     - Orders match when buy_price >= sell_price
     - Execution price is the maker's (resting order's) price
+
+    Order Types:
+    - Limit: User specifies exact price, order sits in book until matched
+    - Market: Price determined automatically from best available in orderbook
     """
 
     def __init__(self, market):
         self.market = market
 
-    def _validate_order(self, user, side, contract_type, price, quantity):
+    def _get_market_price(self, side, contract_type):
+        """
+        Determine execution price for a market order.
+
+        For BUY: Use best ASK (lowest sell order) or last traded price
+        For SELL: Use best BID (highest buy order) or last traded price
+
+        Args:
+            side: 'buy' or 'sell'
+            contract_type: 'yes' or 'no'
+
+        Returns:
+            int: Price in cents (1-99)
+        """
+        if contract_type == 'yes':
+            if side == 'buy':
+                # Buying YES - use best ask (lowest sell price) or last price
+                return self.market.best_yes_ask or self.market.last_yes_price
+            else:
+                # Selling YES - use best bid (highest buy price) or last price
+                return self.market.best_yes_bid or self.market.last_yes_price
+        else:  # NO
+            if side == 'buy':
+                # Buying NO - use best ask (lowest sell price) or last price
+                return self.market.best_no_ask or self.market.last_no_price
+            else:
+                # Selling NO - use best bid (highest buy price) or last price
+                return self.market.best_no_bid or self.market.last_no_price
+
+    def _validate_order(self, user, side, contract_type, price, quantity, order_type='limit'):
         """Validate order parameters before processing."""
         # Validate market is active
         if not self.market.is_trading_active:
             raise MarketNotActiveError(self.market)
 
-        # Validate price (1-99 cents)
-        if not isinstance(price, int) or price < 1 or price > 99:
-            raise InvalidPriceError(price)
+        # Validate price (1-99 cents) - only for limit orders
+        if order_type == 'limit':
+            if not isinstance(price, int) or price < 1 or price > 99:
+                raise InvalidPriceError(price)
 
         # Validate quantity
         if not isinstance(quantity, int) or quantity < 1:
             raise InvalidQuantityError(quantity)
 
     @transaction.atomic
-    def place_order(self, user, side, contract_type, price, quantity):
+    def place_order(self, user, side, contract_type, price, quantity, order_type='limit'):
         """
         Place a new order and attempt to match.
 
@@ -57,8 +91,9 @@ class MatchingEngine:
             user: User placing the order
             side: 'buy' or 'sell'
             contract_type: 'yes' or 'no'
-            price: Price in cents (1-99)
+            price: Price in cents (1-99) - required for limit orders, ignored for market
             quantity: Number of contracts
+            order_type: 'limit' or 'market' (default: 'limit')
 
         Returns:
             tuple: (order, list of trades executed)
@@ -70,8 +105,12 @@ class MatchingEngine:
             InvalidQuantityError: If quantity is not positive
             MarketNotActiveError: If market isn't active for trading
         """
+        # For market orders, determine price from orderbook
+        if order_type == 'market':
+            price = self._get_market_price(side, contract_type)
+
         # Validate inputs
-        self._validate_order(user, side, contract_type, price, quantity)
+        self._validate_order(user, side, contract_type, price, quantity, order_type)
 
         # Lock user row for balance updates
         user = User.objects.select_for_update().get(pk=user.pk)
@@ -115,6 +154,7 @@ class MatchingEngine:
             user=user,
             side=side,
             contract_type=contract_type,
+            order_type=order_type,
             price=price,
             quantity=quantity,
             status=Order.Status.OPEN

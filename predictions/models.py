@@ -229,7 +229,8 @@ class Market(models.Model):
 
 class Order(models.Model):
     """
-    Limit order in the orderbook.
+    Order in the orderbook.
+    Supports both limit orders (specify price) and market orders (automatic price).
     Price-time priority matching.
     """
     class Side(models.TextChoices):
@@ -239,6 +240,10 @@ class Order(models.Model):
     class ContractType(models.TextChoices):
         YES = 'yes', 'Yes'
         NO = 'no', 'No'
+
+    class OrderType(models.TextChoices):
+        LIMIT = 'limit', 'Limit'
+        MARKET = 'market', 'Market'
 
     class Status(models.TextChoices):
         OPEN = 'open', 'Open'
@@ -260,8 +265,14 @@ class Order(models.Model):
 
     side = models.CharField(max_length=4, choices=Side.choices)
     contract_type = models.CharField(max_length=3, choices=ContractType.choices)
+    order_type = models.CharField(
+        max_length=6,
+        choices=OrderType.choices,
+        default=OrderType.LIMIT,
+        help_text="Limit orders specify price, market orders use best available"
+    )
 
-    # Price in cents (1-99)
+    # Price in cents (1-99). For market orders, this is set automatically.
     price = models.IntegerField(
         help_text="Price in cents (1-99)"
     )

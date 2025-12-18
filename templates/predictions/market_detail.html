@@ -73,8 +73,25 @@
             </div>
             <div class="card-body">
                 {% if user.is_authenticated %}
-                <form method="post" action="{% url 'predictions:place_order' market.pk %}">
+                <form method="post" action="{% url 'predictions:place_order' market.pk %}" id="order-form">
                     {% csrf_token %}
+
+                    <!-- Order Type Toggle -->
+                    <div class="mb-3">
+                        <label class="form-label">Order Type</label>
+                        <div class="btn-group w-100" role="group">
+                            <input type="radio" class="btn-check" name="order_type" id="type_market" value="market" checked>
+                            <label class="btn btn-outline-primary" for="type_market">
+                                <i class="bi bi-lightning-fill"></i> Market
+                            </label>
+
+                            <input type="radio" class="btn-check" name="order_type" id="type_limit" value="limit">
+                            <label class="btn btn-outline-secondary" for="type_limit">
+                                <i class="bi bi-list-ol"></i> Limit
+                            </label>
+                        </div>
+                        <small class="text-muted d-block mt-1" id="order_type_hint">Market orders execute at best available price</small>
+                    </div>
 
                     <!-- Order Side -->
                     <div class="mb-3">
@@ -93,33 +110,31 @@
                         <label class="form-label">Contract</label>
                         <div class="btn-group w-100" role="group">
                             <input type="radio" class="btn-check" name="contract_type" id="type_yes" value="yes" checked>
-                            <label class="btn btn-outline-success" for="type_yes">
-                                YES @ {{ market.best_yes_ask|default:market.last_yes_price }}c
+                            <label class="btn btn-outline-success" for="type_yes" id="yes_label">
+                                YES @ <span id="yes_price">{{ market.best_yes_ask|default:market.last_yes_price }}</span>c
                             </label>
 
                             <input type="radio" class="btn-check" name="contract_type" id="type_no" value="no">
-                            <label class="btn btn-outline-danger" for="type_no">
-                                NO @ {{ market.best_no_ask|default:market.last_no_price }}c
+                            <label class="btn btn-outline-danger" for="type_no" id="no_label">
+                                NO @ <span id="no_price">{{ market.best_no_ask|default:market.last_no_price }}</span>c
                             </label>
                         </div>
                     </div>
 
-                    <div class="row">
-                        <!-- Price -->
-                        <div class="col-6 mb-3">
-                            <label class="form-label">Price (1-99c)</label>
-                            <div class="input-group">
-                                <input type="number" class="form-control" name="price"
-                                       min="1" max="99" value="{{ market.last_yes_price }}" required>
-                                <span class="input-group-text">c</span>
-                            </div>
-                        </div>
+                    <!-- Quantity -->
+                    <div class="mb-3">
+                        <label class="form-label">Quantity</label>
+                        <input type="number" class="form-control" name="quantity"
+                               min="1" value="10" required>
+                    </div>
 
-                        <!-- Quantity -->
-                        <div class="col-6 mb-3">
-                            <label class="form-label">Quantity</label>
-                            <input type="number" class="form-control" name="quantity"
-                                   min="1" value="10" required>
+                    <!-- Price (only for limit orders) -->
+                    <div class="mb-3" id="price_section" style="display: none;">
+                        <label class="form-label">Price (1-99c)</label>
+                        <div class="input-group">
+                            <input type="number" class="form-control" name="price" id="price_input"
+                                   min="1" max="99" value="{{ market.last_yes_price }}">
+                            <span class="input-group-text">c</span>
                         </div>
                     </div>
 
@@ -513,6 +528,9 @@
 
         // Update Market Stats sidebar
         updateMarketStats(data);
+
+        // Update form prices for market orders
+        updateFormPrices(data);
     }
 
     // Update Market Stats sidebar
@@ -755,24 +773,92 @@
         }
     }
 
+    // Current market prices (updated via WebSocket)
+    let currentYesPrice = {{ market.best_yes_ask|default:market.last_yes_price }};
+    let currentNoPrice = {{ market.best_no_ask|default:market.last_no_price }};
+
+    // Order type toggle functionality
+    function initOrderTypeToggle() {
+        const marketRadio = document.getElementById('type_market');
+        const limitRadio = document.getElementById('type_limit');
+        const priceSection = document.getElementById('price_section');
+        const priceInput = document.getElementById('price_input');
+        const orderTypeHint = document.getElementById('order_type_hint');
+
+        function updateOrderTypeUI() {
+            if (!priceSection) return;
+
+            if (limitRadio && limitRadio.checked) {
+                priceSection.style.display = 'block';
+                if (priceInput) priceInput.required = true;
+                if (orderTypeHint) orderTypeHint.textContent = 'Limit orders sit in orderbook until price is matched';
+            } else {
+                priceSection.style.display = 'none';
+                if (priceInput) priceInput.required = false;
+                if (orderTypeHint) orderTypeHint.textContent = 'Market orders execute at best available price';
+            }
+            updateCost();
+        }
+
+        if (marketRadio) marketRadio.addEventListener('change', updateOrderTypeUI);
+        if (limitRadio) limitRadio.addEventListener('change', updateOrderTypeUI);
+
+        // Initial state
+        updateOrderTypeUI();
+    }
+
     // Calculate order cost dynamically
     function initOrderCostCalculator() {
-        const priceInput = document.querySelector('input[name="price"]');
+        const priceInput = document.getElementById('price_input');
         const quantityInput = document.querySelector('input[name="quantity"]');
         const costDisplay = document.getElementById('order_cost');
+        const typeYes = document.getElementById('type_yes');
+        const typeNo = document.getElementById('type_no');
+        const marketRadio = document.getElementById('type_market');
 
-        function updateCost() {
-            if (priceInput && quantityInput && costDisplay) {
-                const price = parseInt(priceInput.value) || 0;
+        window.updateCost = function() {
+            if (quantityInput && costDisplay) {
                 const quantity = parseInt(quantityInput.value) || 0;
+                let price;
+
+                // For market orders, use current best price
+                if (marketRadio && marketRadio.checked) {
+                    if (typeYes && typeYes.checked) {
+                        price = currentYesPrice;
+                    } else {
+                        price = currentNoPrice;
+                    }
+                } else {
+                    // For limit orders, use input price
+                    price = parseInt(priceInput.value) || 0;
+                }
+
                 const cost = (price * quantity / 100).toFixed(2);
                 costDisplay.innerHTML = 'Max Cost: <strong>$' + cost + '</strong>';
             }
-        }
+        };
 
         if (priceInput) priceInput.addEventListener('input', updateCost);
         if (quantityInput) quantityInput.addEventListener('input', updateCost);
+        if (typeYes) typeYes.addEventListener('change', updateCost);
+        if (typeNo) typeNo.addEventListener('change', updateCost);
         updateCost();
+    }
+
+    // Update prices in the form when market data changes
+    function updateFormPrices(data) {
+        if (data.best_yes_ask !== undefined || data.last_yes_price !== undefined) {
+            currentYesPrice = data.best_yes_ask || data.last_yes_price;
+            const yesSpan = document.getElementById('yes_price');
+            if (yesSpan) yesSpan.textContent = currentYesPrice;
+        }
+        if (data.best_no_ask !== undefined || data.last_no_price !== undefined) {
+            currentNoPrice = data.best_no_ask || data.last_no_price;
+            const noSpan = document.getElementById('no_price');
+            if (noSpan) noSpan.textContent = currentNoPrice;
+        }
+        // Update cost display
+        if (typeof updateCost === 'function') updateCost();
     }
 
     // Heartbeat to keep connection alive
@@ -786,6 +872,7 @@
 
     // Initialize on DOM ready
     document.addEventListener('DOMContentLoaded', function() {
+        initOrderTypeToggle();
         initOrderCostCalculator();
         connect();
         startHeartbeat();

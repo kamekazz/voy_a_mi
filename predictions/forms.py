@@ -32,6 +32,11 @@ class UserRegistrationForm(UserCreationForm):
 
 class OrderForm(forms.Form):
     """Form for placing a new order."""
+    order_type = forms.ChoiceField(
+        choices=Order.OrderType.choices,
+        initial='market',
+        widget=forms.RadioSelect(attrs={'class': 'btn-check'})
+    )
     side = forms.ChoiceField(
         choices=Order.Side.choices,
         widget=forms.RadioSelect(attrs={'class': 'btn-check'})
@@ -43,6 +48,7 @@ class OrderForm(forms.Form):
     price = forms.IntegerField(
         min_value=1,
         max_value=99,
+        required=False,  # Not required for market orders
         widget=forms.NumberInput(attrs={
             'class': 'form-control',
             'placeholder': 'Price (1-99c)'
@@ -56,11 +62,20 @@ class OrderForm(forms.Form):
         })
     )
 
-    def clean_price(self):
-        price = self.cleaned_data.get('price')
-        if price < 1 or price > 99:
+    def clean(self):
+        cleaned_data = super().clean()
+        order_type = cleaned_data.get('order_type')
+        price = cleaned_data.get('price')
+
+        # Price is required for limit orders
+        if order_type == 'limit' and not price:
+            raise forms.ValidationError("Price is required for limit orders.")
+
+        # Validate price if provided
+        if price is not None and (price < 1 or price > 99):
             raise forms.ValidationError("Price must be between 1 and 99 cents.")
-        return price
+
+        return cleaned_data
 
     def clean_quantity(self):
         quantity = self.cleaned_data.get('quantity')
@@ -71,9 +86,15 @@ class OrderForm(forms.Form):
 
 class QuickOrderForm(forms.Form):
     """Simplified form for quick buy/sell of YES/NO contracts."""
+    order_type = forms.ChoiceField(
+        choices=Order.OrderType.choices,
+        initial='market',
+        widget=forms.RadioSelect(attrs={'class': 'btn-check'})
+    )
     price = forms.IntegerField(
         min_value=1,
         max_value=99,
+        required=False,  # Not required for market orders
         widget=forms.NumberInput(attrs={
             'class': 'form-control form-control-lg',
             'placeholder': '50'
@@ -87,3 +108,14 @@ class QuickOrderForm(forms.Form):
             'placeholder': '10'
         })
     )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        order_type = cleaned_data.get('order_type')
+        price = cleaned_data.get('price')
+
+        # Price is required for limit orders
+        if order_type == 'limit' and not price:
+            raise forms.ValidationError("Price is required for limit orders.")
+
+        return cleaned_data

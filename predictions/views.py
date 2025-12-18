@@ -146,10 +146,13 @@ def place_order(request, pk):
     # Parse order parameters
     side = request.POST.get('side')
     contract_type = request.POST.get('contract_type')
+    order_type = request.POST.get('order_type', 'market')  # Default to market order
 
     try:
-        price = int(request.POST.get('price', 0))
         quantity = int(request.POST.get('quantity', 0))
+        # Price is optional for market orders
+        price_str = request.POST.get('price', '')
+        price = int(price_str) if price_str and price_str.strip() else None
     except (ValueError, TypeError):
         messages.error(request, "Invalid price or quantity.")
         return redirect('predictions:market_detail', pk=pk)
@@ -163,6 +166,15 @@ def place_order(request, pk):
         messages.error(request, "Invalid contract type.")
         return redirect('predictions:market_detail', pk=pk)
 
+    if order_type not in ['market', 'limit']:
+        messages.error(request, "Invalid order type.")
+        return redirect('predictions:market_detail', pk=pk)
+
+    # Price is required for limit orders
+    if order_type == 'limit' and not price:
+        messages.error(request, "Price is required for limit orders.")
+        return redirect('predictions:market_detail', pk=pk)
+
     # Use matching engine to place order
     engine = MatchingEngine(market)
 
@@ -172,21 +184,29 @@ def place_order(request, pk):
             side=side,
             contract_type=contract_type,
             price=price,
-            quantity=quantity
+            quantity=quantity,
+            order_type=order_type
         )
 
         if trades:
             messages.success(
                 request,
-                f"Order placed! {len(trades)} trade(s) executed, "
-                f"{order.filled_quantity} contracts filled."
+                f"Order executed! {len(trades)} trade(s), "
+                f"{order.filled_quantity} contracts filled @ {order.price}c."
             )
         else:
-            messages.success(
-                request,
-                f"Order placed in orderbook: {side.upper()} {quantity} "
-                f"{contract_type.upper()} @ {price}c"
-            )
+            if order_type == 'market':
+                messages.success(
+                    request,
+                    f"Market order placed: {side.upper()} {quantity} "
+                    f"{contract_type.upper()} @ {order.price}c (best available)"
+                )
+            else:
+                messages.success(
+                    request,
+                    f"Limit order placed: {side.upper()} {quantity} "
+                    f"{contract_type.upper()} @ {price}c"
+                )
 
     except InsufficientFundsError as e:
         messages.error(request, str(e))
