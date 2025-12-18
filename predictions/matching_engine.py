@@ -7,8 +7,7 @@ Implements price-time priority matching with atomic transactions.
 from django.db import transaction
 from django.db.models import F
 from decimal import Decimal
-from auctions.models import User
-from .models import Market, Order, Trade, Position, Transaction
+from .models import User, Market, Order, Trade, Position, Transaction
 from .exceptions import (
     InsufficientFundsError,
     InsufficientPositionError,

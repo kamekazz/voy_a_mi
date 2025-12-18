@@ -1,5 +1,6 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth import login
 from django.contrib import messages
 from django.http import JsonResponse
 from django.views.decorators.http import require_POST
@@ -7,7 +8,8 @@ from django.db.models import Sum, Q
 from django.utils import timezone
 from decimal import Decimal
 
-from .models import Category, Event, Market, Order, Trade, Position, Transaction
+from .models import User, Category, Event, Market, Order, Trade, Position, Transaction
+from .forms import UserRegistrationForm
 from .forms import OrderForm, QuickOrderForm
 from .matching_engine import MatchingEngine, get_orderbook
 from .exceptions import (
@@ -354,3 +356,21 @@ def api_user_position(request, pk):
             'unrealized_pnl': 0,
             'realized_pnl': 0,
         })
+
+
+def register(request):
+    """User registration view."""
+    if request.user.is_authenticated:
+        return redirect('predictions:index')
+
+    if request.method == 'POST':
+        form = UserRegistrationForm(request.POST)
+        if form.is_valid():
+            user = form.save()
+            login(request, user)
+            messages.success(request, 'Account created successfully! Welcome to Voy a Mi.')
+            return redirect('predictions:index')
+    else:
+        form = UserRegistrationForm()
+
+    return render(request, 'registration/register.html', {'form': form})

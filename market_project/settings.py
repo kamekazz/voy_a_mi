@@ -37,7 +37,6 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'auctions',
     'predictions',
 ]
 
@@ -129,7 +128,7 @@ MEDIA_ROOT = BASE_DIR / 'media'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Custom user model
-AUTH_USER_MODEL = 'auctions.User'
+AUTH_USER_MODEL = 'predictions.User'
 
 # Login/Logout redirects
 LOGIN_REDIRECT_URL = '/'

@@ -1,7 +1,34 @@
 from django.db import models
 from django.conf import settings
+from django.contrib.auth.models import AbstractUser
 from django.utils import timezone
 from decimal import Decimal
+
+
+class User(AbstractUser):
+    """Custom user model for the prediction market platform."""
+    balance = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text="User's available balance in dollars"
+    )
+    reserved_balance = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text="Funds locked in open buy orders"
+    )
+
+    @property
+    def available_balance(self):
+        """Balance available for new orders."""
+        return self.balance - self.reserved_balance
+
+    @property
+    def total_balance(self):
+        """Total balance including reserved funds."""
+        return self.balance
 
 
 class Category(models.Model):
