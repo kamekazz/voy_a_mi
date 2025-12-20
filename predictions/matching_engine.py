@@ -180,35 +180,64 @@ class MatchingEngine:
         """
         Match incoming order against resting orders.
 
-        Uses price-time priority:
-        - For BUY: Match against lowest priced SELL orders first
-        - For SELL: Match against highest priced BUY orders first
-        - Within same price, oldest order matches first
+        Matching Priority (Polymarket-style):
+        1. Direct match: BUY YES vs SELL YES (or BUY NO vs SELL NO)
+        2. Mint match: BUY YES + BUY NO at complementary prices (creates shares)
+        3. Merge match: SELL YES + SELL NO at complementary prices (burns shares)
+
+        Uses price-time priority within each matching type.
         """
         trades = []
         remaining = incoming_order.quantity - incoming_order.filled_quantity
 
         while remaining > 0:
-            # Find best matching order
+            # First, try direct match (highest priority)
             matching_order = self._find_best_match(incoming_order)
 
-            if matching_order is None:
-                break
+            if matching_order is not None:
+                # Calculate fill quantity
+                fill_qty = min(remaining, matching_order.remaining_quantity)
 
-            # Calculate fill quantity
-            fill_qty = min(remaining, matching_order.remaining_quantity)
+                # Execution price is maker's (resting order's) price
+                exec_price = matching_order.price
 
-            # Execution price is maker's (resting order's) price
-            exec_price = matching_order.price
+                # Execute the direct trade
+                trade = self._execute_trade(
+                    incoming_order,
+                    matching_order,
+                    fill_qty,
+                    exec_price
+                )
+                trades.append(trade)
+            else:
+                # No direct match - try complementary matching
+                if incoming_order.side == 'buy':
+                    # Try minting: find BUY order for opposite contract
+                    comp_order, yes_price, no_price = self._find_complementary_buy_match(incoming_order)
+                    if comp_order:
+                        fill_qty = min(remaining, comp_order.remaining_quantity)
 
-            # Execute the trade
-            trade = self._execute_trade(
-                incoming_order,
-                matching_order,
-                fill_qty,
-                exec_price
-            )
-            trades.append(trade)
+                        # Determine which is YES and which is NO order
+                        if incoming_order.contract_type == 'yes':
+                            trade = self._execute_mint(incoming_order, comp_order, fill_qty, yes_price, no_price)
+                        else:
+                            trade = self._execute_mint(comp_order, incoming_order, fill_qty, yes_price, no_price)
+                        trades.append(trade)
+                    else:
+                        break  # No match found
+                else:
+                    # Try merging: find SELL order for opposite contract
+                    comp_order, yes_price, no_price = self._find_complementary_sell_match(incoming_order)
+                    if comp_order:
+                        fill_qty = min(remaining, comp_order.remaining_quantity)
+
+                        if incoming_order.contract_type == 'yes':
+                            trade = self._execute_merge(incoming_order, comp_order, fill_qty, yes_price, no_price)
+                        else:
+                            trade = self._execute_merge(comp_order, incoming_order, fill_qty, yes_price, no_price)
+                        trades.append(trade)
+                    else:
+                        break  # No match found
 
             # Update remaining quantity
             incoming_order.refresh_from_db()
@@ -248,6 +277,332 @@ class MatchingEngine:
             ).order_by('-price', 'created_at')  # highest price first, then oldest
 
         return matching_orders.select_for_update().first()
+
+    def _find_complementary_buy_match(self, incoming_order):
+        """
+        Find a complementary buy order for minting (Polymarket-style).
+
+        If incoming is BUY YES @ P_yes, find BUY NO @ P_no where P_yes + P_no >= 100.
+        This allows two buyers to mint new YES/NO shares by paying $1 combined.
+
+        Returns:
+            tuple: (complementary_order, yes_price, no_price) or (None, None, None)
+        """
+        if incoming_order.side != 'buy':
+            return None, None, None
+
+        # Find complementary buy orders for the opposite contract type
+        opposite_type = 'no' if incoming_order.contract_type == 'yes' else 'yes'
+
+        # For minting: YES_price + NO_price >= 100 cents (sum to >= $1)
+        # If incoming is BUY YES @ 60c, need BUY NO @ 40c or higher
+        min_complementary_price = 100 - incoming_order.price
+
+        complementary_orders = Order.objects.filter(
+            market=self.market,
+            side='buy',
+            contract_type=opposite_type,
+            status__in=[Order.Status.OPEN, Order.Status.PARTIALLY_FILLED],
+            price__gte=min_complementary_price
+        ).exclude(
+            user=incoming_order.user  # Prevent self-matching
+        ).order_by('-price', 'created_at')  # Highest price first for best match
+
+        complementary = complementary_orders.select_for_update().first()
+
+        if complementary:
+            # Determine which is YES and which is NO order
+            if incoming_order.contract_type == 'yes':
+                return complementary, incoming_order.price, complementary.price
+            else:
+                return complementary, complementary.price, incoming_order.price
+
+        return None, None, None
+
+    def _find_complementary_sell_match(self, incoming_order):
+        """
+        Find a complementary sell order for merging (Polymarket-style).
+
+        If incoming is SELL YES @ P_yes, find SELL NO @ P_no where P_yes + P_no <= 100.
+        This allows two sellers to burn their shares and split $1 collateral.
+
+        Returns:
+            tuple: (complementary_order, yes_price, no_price) or (None, None, None)
+        """
+        if incoming_order.side != 'sell':
+            return None, None, None
+
+        opposite_type = 'no' if incoming_order.contract_type == 'yes' else 'yes'
+
+        # For merging: YES_price + NO_price <= 100 cents (split $1 collateral)
+        # If incoming is SELL YES @ 55c, need SELL NO @ 45c or lower
+        max_complementary_price = 100 - incoming_order.price
+
+        complementary_orders = Order.objects.filter(
+            market=self.market,
+            side='sell',
+            contract_type=opposite_type,
+            status__in=[Order.Status.OPEN, Order.Status.PARTIALLY_FILLED],
+            price__lte=max_complementary_price
+        ).exclude(
+            user=incoming_order.user
+        ).order_by('price', 'created_at')  # Lowest price first for best match
+
+        complementary = complementary_orders.select_for_update().first()
+
+        if complementary:
+            if incoming_order.contract_type == 'yes':
+                return complementary, incoming_order.price, complementary.price
+            else:
+                return complementary, complementary.price, incoming_order.price
+
+        return None, None, None
+
+    def _execute_mint(self, yes_order, no_order, quantity, yes_price, no_price):
+        """
+        Execute a mint trade: combine BUY YES and BUY NO to create new shares.
+
+        Both buyers pay their respective prices (summing to >= $1).
+        Each buyer receives their contract type.
+        New shares are created (market.total_shares_outstanding increases).
+
+        Args:
+            yes_order: The BUY YES order
+            no_order: The BUY NO order
+            quantity: Number of share pairs to mint
+            yes_price: Price YES buyer pays (cents)
+            no_price: Price NO buyer pays (cents)
+
+        Returns:
+            Trade record for the mint operation
+        """
+        # Lock both users
+        yes_buyer = User.objects.select_for_update().get(pk=yes_order.user.pk)
+        no_buyer = User.objects.select_for_update().get(pk=no_order.user.pk)
+
+        # Calculate costs
+        yes_cost = Decimal(yes_price * quantity) / 100
+        no_cost = Decimal(no_price * quantity) / 100
+
+        # Release reserved funds and deduct actual costs for YES buyer
+        yes_reserved_release = Decimal(yes_order.price * quantity) / 100
+        yes_buyer.reserved_balance -= yes_reserved_release
+        yes_buyer.balance -= yes_cost  # Actually deduct the cost
+        yes_buyer.save()
+
+        # Release reserved funds and deduct actual costs for NO buyer
+        no_reserved_release = Decimal(no_order.price * quantity) / 100
+        no_buyer.reserved_balance -= no_reserved_release
+        no_buyer.balance -= no_cost  # Actually deduct the cost
+        no_buyer.save()
+
+        # Update positions - each buyer gets their contract type
+        self._update_position_for_mint(yes_buyer, 'yes', quantity, yes_price)
+        self._update_position_for_mint(no_buyer, 'no', quantity, no_price)
+
+        # Update order fill quantities
+        yes_order.filled_quantity = F('filled_quantity') + quantity
+        no_order.filled_quantity = F('filled_quantity') + quantity
+        yes_order.save()
+        no_order.save()
+
+        # Refresh and update statuses
+        for order in [yes_order, no_order]:
+            order.refresh_from_db()
+            if order.filled_quantity >= order.quantity:
+                order.status = Order.Status.FILLED
+            else:
+                order.status = Order.Status.PARTIALLY_FILLED
+            order.save()
+
+        # Update market: new shares created
+        self.market.total_shares_outstanding = F('total_shares_outstanding') + quantity
+        self.market.total_volume = F('total_volume') + quantity
+        self.market.last_yes_price = yes_price
+        self.market.last_no_price = 100 - yes_price
+        self.market.save()
+        self.market.refresh_from_db()
+
+        # Create trade record
+        trade = Trade.objects.create(
+            market=self.market,
+            buy_order=yes_order,
+            sell_order=no_order,  # Reuse field for the NO buyer's order
+            buyer=yes_buyer,
+            seller=no_buyer,  # Actually also a buyer (getting NO contracts)
+            contract_type='yes',
+            price=yes_price,
+            quantity=quantity,
+            trade_type=Trade.TradeType.MINT
+        )
+
+        # Create transaction records (balance was already updated, so calculate before from current)
+        Transaction.objects.create(
+            user=yes_buyer,
+            type=Transaction.Type.MINT_MATCH,
+            amount=-yes_cost,
+            balance_before=yes_buyer.balance + yes_cost,
+            balance_after=yes_buyer.balance,
+            trade=trade,
+            market=self.market,
+            description=f"Minted {quantity} YES @ {yes_price}c (paired with NO buyer)"
+        )
+
+        Transaction.objects.create(
+            user=no_buyer,
+            type=Transaction.Type.MINT_MATCH,
+            amount=-no_cost,
+            balance_before=no_buyer.balance + no_cost,
+            balance_after=no_buyer.balance,
+            trade=trade,
+            market=self.market,
+            description=f"Minted {quantity} NO @ {no_price}c (paired with YES buyer)"
+        )
+
+        broadcast_trade_executed(trade)
+
+        return trade
+
+    def _execute_merge(self, yes_order, no_order, quantity, yes_price, no_price):
+        """
+        Execute a merge trade: combine SELL YES and SELL NO to burn shares.
+
+        Each seller gives up their contracts and receives their price from collateral.
+        Shares are destroyed (market.total_shares_outstanding decreases).
+
+        Args:
+            yes_order: The SELL YES order
+            no_order: The SELL NO order
+            quantity: Number of share pairs to merge
+            yes_price: Price YES seller receives (cents)
+            no_price: Price NO seller receives (cents)
+
+        Returns:
+            Trade record for the merge operation
+        """
+        # Lock both users
+        yes_seller = User.objects.select_for_update().get(pk=yes_order.user.pk)
+        no_seller = User.objects.select_for_update().get(pk=no_order.user.pk)
+
+        # Verify positions (should already be checked, but double-verify)
+        yes_pos = Position.objects.select_for_update().get(user=yes_seller, market=self.market)
+        no_pos = Position.objects.select_for_update().get(user=no_seller, market=self.market)
+
+        if yes_pos.yes_quantity < quantity:
+            raise InsufficientPositionError(quantity, yes_pos.yes_quantity, 'yes')
+        if no_pos.no_quantity < quantity:
+            raise InsufficientPositionError(quantity, no_pos.no_quantity, 'no')
+
+        # Calculate payouts
+        yes_payout = Decimal(yes_price * quantity) / 100
+        no_payout = Decimal(no_price * quantity) / 100
+
+        # Credit sellers
+        yes_seller.balance += yes_payout
+        yes_seller.save()
+
+        no_seller.balance += no_payout
+        no_seller.save()
+
+        # Update positions - deduct contracts and calculate realized P&L
+        yes_pnl = Decimal(quantity * (yes_price - float(yes_pos.yes_avg_cost))) / 100
+        yes_pos.yes_quantity -= quantity
+        yes_pos.realized_pnl += yes_pnl
+        yes_pos.save()
+
+        no_pnl = Decimal(quantity * (no_price - float(no_pos.no_avg_cost))) / 100
+        no_pos.no_quantity -= quantity
+        no_pos.realized_pnl += no_pnl
+        no_pos.save()
+
+        # Update order fill quantities
+        yes_order.filled_quantity = F('filled_quantity') + quantity
+        no_order.filled_quantity = F('filled_quantity') + quantity
+        yes_order.save()
+        no_order.save()
+
+        for order in [yes_order, no_order]:
+            order.refresh_from_db()
+            if order.filled_quantity >= order.quantity:
+                order.status = Order.Status.FILLED
+            else:
+                order.status = Order.Status.PARTIALLY_FILLED
+            order.save()
+
+        # Update market: shares burned
+        self.market.total_shares_outstanding = F('total_shares_outstanding') - quantity
+        self.market.total_volume = F('total_volume') + quantity
+        self.market.last_yes_price = yes_price
+        self.market.last_no_price = 100 - yes_price
+        self.market.save()
+        self.market.refresh_from_db()
+
+        # Create trade record
+        trade = Trade.objects.create(
+            market=self.market,
+            buy_order=yes_order,  # Reusing field for YES seller
+            sell_order=no_order,  # Reusing field for NO seller
+            buyer=yes_seller,  # Actually a seller
+            seller=no_seller,  # Actually also a seller
+            contract_type='yes',
+            price=yes_price,
+            quantity=quantity,
+            trade_type=Trade.TradeType.MERGE
+        )
+
+        # Create transaction records
+        Transaction.objects.create(
+            user=yes_seller,
+            type=Transaction.Type.MERGE_MATCH,
+            amount=yes_payout,
+            balance_before=yes_seller.balance - yes_payout,
+            balance_after=yes_seller.balance,
+            trade=trade,
+            market=self.market,
+            description=f"Merged {quantity} YES @ {yes_price}c (paired with NO seller)"
+        )
+
+        Transaction.objects.create(
+            user=no_seller,
+            type=Transaction.Type.MERGE_MATCH,
+            amount=no_payout,
+            balance_before=no_seller.balance - no_payout,
+            balance_after=no_seller.balance,
+            trade=trade,
+            market=self.market,
+            description=f"Merged {quantity} NO @ {no_price}c (paired with YES seller)"
+        )
+
+        broadcast_trade_executed(trade)
+
+        return trade
+
+    def _update_position_for_mint(self, user, contract_type, quantity, price):
+        """Update user position after receiving minted contracts."""
+        position, _ = Position.objects.get_or_create(user=user, market=self.market)
+
+        if contract_type == 'yes':
+            old_qty = position.yes_quantity
+            old_cost = float(position.yes_avg_cost)
+            new_qty = old_qty + quantity
+
+            if new_qty > 0:
+                position.yes_avg_cost = Decimal(
+                    (old_qty * old_cost + quantity * price) / new_qty
+                )
+            position.yes_quantity = new_qty
+        else:
+            old_qty = position.no_quantity
+            old_cost = float(position.no_avg_cost)
+            new_qty = old_qty + quantity
+
+            if new_qty > 0:
+                position.no_avg_cost = Decimal(
+                    (old_qty * old_cost + quantity * price) / new_qty
+                )
+            position.no_quantity = new_qty
+
+        position.save()
 
     def _execute_trade(self, incoming_order, resting_order, quantity, price):
         """
@@ -557,4 +912,296 @@ def get_orderbook(market, depth=10):
         'yes_asks': get_levels('sell', 'yes', ascending=True),   # Lowest first
         'no_bids': get_levels('buy', 'no', ascending=False),
         'no_asks': get_levels('sell', 'no', ascending=True),
+    }
+
+
+# =============================================================================
+# Settlement and Direct Mint/Redeem Functions
+# =============================================================================
+
+@transaction.atomic
+def settle_market(market, outcome):
+    """
+    Settle a market and pay out winners.
+
+    Winning contracts pay $1 each. Losing contracts pay $0.
+    All open orders are cancelled and reserved funds released.
+
+    Args:
+        market: Market instance to settle
+        outcome: 'yes' or 'no' - the winning outcome
+
+    Returns:
+        dict with settlement statistics
+    """
+    from django.db.models import Q
+
+    if market.status not in [Market.Status.ACTIVE, Market.Status.HALTED]:
+        from .exceptions import TradingError
+        raise TradingError(f"Market {market.id} cannot be settled: status is {market.status}")
+
+    if outcome not in ['yes', 'no']:
+        raise ValueError("Outcome must be 'yes' or 'no'")
+
+    # Cancel all open orders first
+    open_orders = Order.objects.filter(
+        market=market,
+        status__in=[Order.Status.OPEN, Order.Status.PARTIALLY_FILLED]
+    )
+
+    for order in open_orders:
+        if order.side == 'buy':
+            # Release reserved funds
+            user = User.objects.select_for_update().get(pk=order.user.pk)
+            remaining_qty = order.quantity - order.filled_quantity
+            release_amount = Decimal(order.price * remaining_qty) / 100
+            user.reserved_balance -= release_amount
+            user.save()
+
+            Transaction.objects.create(
+                user=user,
+                type=Transaction.Type.ORDER_RELEASE,
+                amount=release_amount,
+                balance_before=user.balance,
+                balance_after=user.balance,
+                order=order,
+                market=market,
+                description=f"Released funds from cancelled order (market settled)"
+            )
+
+        order.status = Order.Status.CANCELLED
+        order.save()
+
+    # Get all positions with holdings
+    positions = Position.objects.filter(market=market).filter(
+        Q(yes_quantity__gt=0) | Q(no_quantity__gt=0)
+    )
+
+    stats = {
+        'winners': 0,
+        'losers': 0,
+        'total_payout': Decimal('0.00'),
+        'winning_outcome': outcome
+    }
+
+    for position in positions:
+        user = User.objects.select_for_update().get(pk=position.user.pk)
+
+        if outcome == 'yes':
+            # YES wins: pay $1 per YES contract, NO contracts worth $0
+            winning_qty = position.yes_quantity
+            losing_qty = position.no_quantity
+        else:
+            # NO wins: pay $1 per NO contract, YES contracts worth $0
+            winning_qty = position.no_quantity
+            losing_qty = position.yes_quantity
+
+        # Pay winners
+        if winning_qty > 0:
+            payout = Decimal(winning_qty)  # $1 per contract
+            balance_before = user.balance
+            user.balance += payout
+            user.save()
+
+            Transaction.objects.create(
+                user=user,
+                type=Transaction.Type.SETTLEMENT_WIN,
+                amount=payout,
+                balance_before=balance_before,
+                balance_after=user.balance,
+                market=market,
+                description=f"Won {winning_qty} {outcome.upper()} contracts @ $1 each"
+            )
+
+            stats['winners'] += 1
+            stats['total_payout'] += payout
+
+        # Record losses
+        if losing_qty > 0:
+            Transaction.objects.create(
+                user=user,
+                type=Transaction.Type.SETTLEMENT_LOSS,
+                amount=Decimal('0.00'),
+                balance_before=user.balance,
+                balance_after=user.balance,
+                market=market,
+                description=f"Lost {losing_qty} {'NO' if outcome == 'yes' else 'YES'} contracts (worthless)"
+            )
+            stats['losers'] += 1
+
+        # Clear positions
+        position.yes_quantity = 0
+        position.no_quantity = 0
+        position.save()
+
+    # Update market status
+    if outcome == 'yes':
+        market.status = Market.Status.SETTLED_YES
+    else:
+        market.status = Market.Status.SETTLED_NO
+    market.save()
+
+    return stats
+
+
+@transaction.atomic
+def mint_complete_set(market, user, quantity):
+    """
+    Mint complete sets of YES+NO contracts.
+
+    User pays $1 per set, receives 1 YES and 1 NO contract.
+    This is the canonical way to create new shares without a counterparty.
+
+    Args:
+        market: Market instance
+        user: User minting the set
+        quantity: Number of complete sets to mint
+
+    Returns:
+        dict with minting details
+    """
+    if not market.is_trading_active:
+        raise MarketNotActiveError(market)
+
+    if quantity <= 0:
+        raise InvalidQuantityError(quantity)
+
+    cost = Decimal(quantity)  # $1 per set
+
+    user = User.objects.select_for_update().get(pk=user.pk)
+
+    if user.available_balance < cost:
+        raise InsufficientFundsError(cost, user.available_balance)
+
+    balance_before = user.balance
+    user.balance -= cost
+    user.save()
+
+    # Get or create position
+    position, _ = Position.objects.get_or_create(user=user, market=market)
+
+    # Add contracts at 50c each (fair value for complete set)
+    old_yes_qty = position.yes_quantity
+    old_no_qty = position.no_quantity
+
+    # Update YES position
+    if old_yes_qty > 0:
+        position.yes_avg_cost = (
+            (position.yes_avg_cost * old_yes_qty + Decimal('50.00') * quantity) /
+            (old_yes_qty + quantity)
+        )
+    else:
+        position.yes_avg_cost = Decimal('50.00')
+    position.yes_quantity += quantity
+
+    # Update NO position
+    if old_no_qty > 0:
+        position.no_avg_cost = (
+            (position.no_avg_cost * old_no_qty + Decimal('50.00') * quantity) /
+            (old_no_qty + quantity)
+        )
+    else:
+        position.no_avg_cost = Decimal('50.00')
+    position.no_quantity += quantity
+
+    position.save()
+
+    # Update market shares outstanding
+    market.total_shares_outstanding = F('total_shares_outstanding') + quantity
+    market.save()
+    market.refresh_from_db()
+
+    # Create transaction
+    Transaction.objects.create(
+        user=user,
+        type=Transaction.Type.MINT,
+        amount=-cost,
+        balance_before=balance_before,
+        balance_after=user.balance,
+        market=market,
+        description=f"Minted {quantity} complete sets (YES+NO) @ $1/set"
+    )
+
+    return {
+        'quantity': quantity,
+        'cost': cost,
+        'yes_received': quantity,
+        'no_received': quantity
+    }
+
+
+@transaction.atomic
+def redeem_complete_set(market, user, quantity):
+    """
+    Redeem complete sets of YES+NO contracts for $1 each.
+
+    User gives up 1 YES and 1 NO contract, receives $1.
+    This burns shares and releases collateral.
+
+    Args:
+        market: Market instance
+        user: User redeeming the set
+        quantity: Number of complete sets to redeem
+
+    Returns:
+        dict with redemption details
+    """
+    if not market.is_trading_active:
+        raise MarketNotActiveError(market)
+
+    if quantity <= 0:
+        raise InvalidQuantityError(quantity)
+
+    user = User.objects.select_for_update().get(pk=user.pk)
+
+    # Verify user has enough of both contract types
+    position = Position.objects.filter(user=user, market=market).first()
+
+    if not position:
+        raise InsufficientPositionError(quantity, 0, 'complete set')
+
+    if position.yes_quantity < quantity:
+        raise InsufficientPositionError(quantity, position.yes_quantity, 'yes')
+
+    if position.no_quantity < quantity:
+        raise InsufficientPositionError(quantity, position.no_quantity, 'no')
+
+    payout = Decimal(quantity)  # $1 per set
+
+    # Calculate realized P&L (redeeming at 50c each, since pair = $1)
+    yes_pnl = Decimal(quantity * (50 - float(position.yes_avg_cost))) / 100
+    no_pnl = Decimal(quantity * (50 - float(position.no_avg_cost))) / 100
+
+    # Update position
+    position.yes_quantity -= quantity
+    position.no_quantity -= quantity
+    position.realized_pnl += yes_pnl + no_pnl
+    position.save()
+
+    # Credit user
+    balance_before = user.balance
+    user.balance += payout
+    user.save()
+
+    # Update market shares outstanding
+    market.total_shares_outstanding = F('total_shares_outstanding') - quantity
+    market.save()
+    market.refresh_from_db()
+
+    # Create transaction
+    Transaction.objects.create(
+        user=user,
+        type=Transaction.Type.REDEEM,
+        amount=payout,
+        balance_before=balance_before,
+        balance_after=user.balance,
+        market=market,
+        description=f"Redeemed {quantity} complete sets (YES+NO) @ $1/set"
+    )
+
+    return {
+        'quantity': quantity,
+        'payout': payout,
+        'yes_burned': quantity,
+        'no_burned': quantity
     }

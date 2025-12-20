@@ -150,19 +150,39 @@ class MarketAdmin(admin.ModelAdmin):
 
     actions = ['settle_yes', 'settle_no', 'halt_trading', 'resume_trading']
 
-    @admin.action(description='Settle as YES (contracts pay $1)')
+    @admin.action(description='Settle as YES (pay YES holders $1/share)')
     def settle_yes(self, request, queryset):
-        updated = queryset.filter(status=Market.Status.ACTIVE).update(
-            status=Market.Status.SETTLED_YES
-        )
-        self.message_user(request, f'{updated} market(s) settled as YES.')
+        from .matching_engine import settle_market
+        settled = 0
+        errors = []
+        for market in queryset.filter(status=Market.Status.ACTIVE):
+            try:
+                settle_market(market, 'yes')
+                settled += 1
+            except Exception as e:
+                errors.append(f'{market.title}: {str(e)}')
 
-    @admin.action(description='Settle as NO (contracts pay $0)')
+        if settled:
+            self.message_user(request, f'{settled} market(s) settled as YES. Winners paid $1/share.')
+        if errors:
+            self.message_user(request, f'Errors: {"; ".join(errors)}', level='ERROR')
+
+    @admin.action(description='Settle as NO (pay NO holders $1/share)')
     def settle_no(self, request, queryset):
-        updated = queryset.filter(status=Market.Status.ACTIVE).update(
-            status=Market.Status.SETTLED_NO
-        )
-        self.message_user(request, f'{updated} market(s) settled as NO.')
+        from .matching_engine import settle_market
+        settled = 0
+        errors = []
+        for market in queryset.filter(status=Market.Status.ACTIVE):
+            try:
+                settle_market(market, 'no')
+                settled += 1
+            except Exception as e:
+                errors.append(f'{market.title}: {str(e)}')
+
+        if settled:
+            self.message_user(request, f'{settled} market(s) settled as NO. Winners paid $1/share.')
+        if errors:
+            self.message_user(request, f'Errors: {"; ".join(errors)}', level='ERROR')
 
     @admin.action(description='Halt trading')
     def halt_trading(self, request, queryset):

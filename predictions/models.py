@@ -187,6 +187,12 @@ class Market(models.Model):
     total_volume = models.IntegerField(default=0, help_text="Total contracts traded")
     volume_24h = models.IntegerField(default=0, help_text="Contracts traded in last 24h")
 
+    # Polymarket-style collateral tracking
+    total_shares_outstanding = models.IntegerField(
+        default=0,
+        help_text="Total YES/NO pairs minted (equals collateral locked in dollars)"
+    )
+
     # For multi-outcome events
     is_mutually_exclusive = models.BooleanField(
         default=True,
@@ -328,6 +334,11 @@ class Trade(models.Model):
     Record of a matched trade between two orders.
     Created when orders are matched in the orderbook.
     """
+    class TradeType(models.TextChoices):
+        DIRECT = 'direct', 'Direct Match'
+        MINT = 'mint', 'Minted (Buy YES + Buy NO)'
+        MERGE = 'merge', 'Merged (Sell YES + Sell NO)'
+
     market = models.ForeignKey(
         Market,
         on_delete=models.CASCADE,
@@ -361,6 +372,14 @@ class Trade(models.Model):
     contract_type = models.CharField(max_length=3, choices=Order.ContractType.choices)
     price = models.IntegerField(help_text="Execution price in cents")
     quantity = models.IntegerField(help_text="Number of contracts traded")
+
+    # Trade type for Polymarket-style matching
+    trade_type = models.CharField(
+        max_length=10,
+        choices=TradeType.choices,
+        default=TradeType.DIRECT,
+        help_text="How this trade was matched (direct, mint, or merge)"
+    )
 
     executed_at = models.DateTimeField(auto_now_add=True)
 
@@ -477,6 +496,11 @@ class Transaction(models.Model):
         ORDER_RESERVE = 'order_reserve', 'Order Reserve'
         ORDER_RELEASE = 'order_release', 'Order Release'
         REFUND = 'refund', 'Refund'
+        # Polymarket-style minting/merging
+        MINT = 'mint', 'Mint (Create Complete Set)'
+        REDEEM = 'redeem', 'Redeem (Burn Complete Set)'
+        MINT_MATCH = 'mint_match', 'Mint via Order Match'
+        MERGE_MATCH = 'merge_match', 'Merge via Order Match'
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,

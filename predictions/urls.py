@@ -14,6 +14,10 @@ urlpatterns = [
     path('markets/<int:pk>/order/', views.place_order, name='place_order'),
     path('orders/<int:pk>/cancel/', views.cancel_order, name='cancel_order'),
 
+    # Mint/Redeem complete sets (require login)
+    path('markets/<int:pk>/mint/', views.mint_complete_set_view, name='mint_complete_set'),
+    path('markets/<int:pk>/redeem/', views.redeem_complete_set_view, name='redeem_complete_set'),
+
     # User pages (require login)
     path('portfolio/', views.portfolio, name='portfolio'),
     path('orders/', views.order_history, name='order_history'),

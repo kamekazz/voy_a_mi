@@ -34,6 +34,17 @@ def index(request):
         event__status=Event.Status.ACTIVE
     ).select_related('event').order_by('-total_volume')[:6]
 
+    # Calculate AMM prices for markets that have AMM enabled
+    for market in popular_markets:
+        if market.amm_enabled:
+            amm = AMMEngine(market)
+            prices = amm.get_prices()
+            market.current_yes_price = prices['yes']
+            market.current_no_price = prices['no']
+        else:
+            market.current_yes_price = market.last_yes_price
+            market.current_no_price = market.last_no_price
+
     # Get categories with event counts
     categories = Category.objects.annotate(
         active_events=Sum('events__status')
@@ -87,6 +98,19 @@ def event_detail(request, slug):
         slug=slug
     )
     markets = event.markets.all()
+
+    # Calculate AMM prices for markets that have AMM enabled
+    for market in markets:
+        if market.amm_enabled:
+            amm = AMMEngine(market)
+            prices = amm.get_prices()
+            # Attach AMM prices to the market object for template use
+            market.current_yes_price = prices['yes']
+            market.current_no_price = prices['no']
+        else:
+            # Use stored orderbook prices
+            market.current_yes_price = market.last_yes_price
+            market.current_no_price = market.last_no_price
 
     context = {
         'event': event,
@@ -308,6 +332,70 @@ def cancel_order(request, pk):
         messages.error(request, str(e))
 
     return redirect('predictions:market_detail', pk=market_pk)
+
+
+@login_required
+@require_POST
+def mint_complete_set_view(request, pk):
+    """Mint complete sets of YES+NO contracts."""
+    from .matching_engine import mint_complete_set
+
+    market = get_object_or_404(Market, pk=pk)
+
+    try:
+        quantity = int(request.POST.get('quantity', 0))
+    except (ValueError, TypeError):
+        messages.error(request, "Invalid quantity.")
+        return redirect('predictions:market_detail', pk=pk)
+
+    try:
+        result = mint_complete_set(market, request.user, quantity)
+        messages.success(
+            request,
+            f"Minted {result['quantity']} complete sets. "
+            f"Received {result['yes_received']} YES + {result['no_received']} NO contracts. "
+            f"Cost: ${result['cost']:.2f}"
+        )
+    except InsufficientFundsError as e:
+        messages.error(request, str(e))
+    except MarketNotActiveError as e:
+        messages.error(request, str(e))
+    except TradingError as e:
+        messages.error(request, f"Error: {e}")
+
+    return redirect('predictions:market_detail', pk=pk)
+
+
+@login_required
+@require_POST
+def redeem_complete_set_view(request, pk):
+    """Redeem complete sets for $1 each."""
+    from .matching_engine import redeem_complete_set
+
+    market = get_object_or_404(Market, pk=pk)
+
+    try:
+        quantity = int(request.POST.get('quantity', 0))
+    except (ValueError, TypeError):
+        messages.error(request, "Invalid quantity.")
+        return redirect('predictions:market_detail', pk=pk)
+
+    try:
+        result = redeem_complete_set(market, request.user, quantity)
+        messages.success(
+            request,
+            f"Redeemed {result['quantity']} complete sets. "
+            f"Burned {result['yes_burned']} YES + {result['no_burned']} NO contracts. "
+            f"Received: ${result['payout']:.2f}"
+        )
+    except InsufficientPositionError as e:
+        messages.error(request, str(e))
+    except MarketNotActiveError as e:
+        messages.error(request, str(e))
+    except TradingError as e:
+        messages.error(request, f"Error: {e}")
+
+    return redirect('predictions:market_detail', pk=pk)
 
 
 @login_required
