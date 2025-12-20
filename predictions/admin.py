@@ -29,7 +29,7 @@ class MarketInline(admin.TabularInline):
 @admin.register(Event)
 class EventAdmin(admin.ModelAdmin):
     list_display = [
-        'title', 'category', 'event_type', 'status', 'trading_status',
+        'thumbnail_preview', 'title', 'category', 'event_type', 'status', 'trading_status',
         'trading_starts', 'trading_ends', 'market_count'
     ]
     list_filter = ['status', 'event_type', 'category', 'trading_starts']
@@ -42,6 +42,10 @@ class EventAdmin(admin.ModelAdmin):
     fieldsets = (
         (None, {
             'fields': ('title', 'slug', 'description', 'event_type', 'category')
+        }),
+        ('Images', {
+            'fields': ('image', 'thumbnail'),
+            'description': 'Upload main image and thumbnail for this event.'
         }),
         ('Resolution', {
             'fields': ('resolution_source', 'resolution_date')
@@ -72,6 +76,12 @@ class EventAdmin(admin.ModelAdmin):
         return obj.markets.count()
     market_count.short_description = 'Markets'
 
+    def thumbnail_preview(self, obj):
+        if obj.thumbnail:
+            return format_html('<img src="{}" width="50" height="auto" />', obj.thumbnail.url)
+        return '-'
+    thumbnail_preview.short_description = 'Image'
+
     def save_model(self, request, obj, form, change):
         if not change:  # New object
             obj.created_by = request.user
@@ -93,7 +103,7 @@ class EventAdmin(admin.ModelAdmin):
 @admin.register(Market)
 class MarketAdmin(admin.ModelAdmin):
     list_display = [
-        'title', 'event_link', 'status', 'yes_price_display', 'no_price_display',
+        'thumbnail_preview', 'title', 'event_link', 'status', 'yes_price_display', 'no_price_display',
         'spread_display', 'total_volume', 'order_count'
     ]
     list_filter = ['status', 'event__category', 'event__status']
@@ -108,6 +118,10 @@ class MarketAdmin(admin.ModelAdmin):
     fieldsets = (
         (None, {
             'fields': ('event', 'title', 'slug', 'description', 'status')
+        }),
+        ('Images', {
+            'fields': ('image', 'thumbnail'),
+            'description': 'Optional market-specific images. Falls back to event image if not set.'
         }),
         ('Pricing', {
             'fields': (
@@ -147,6 +161,13 @@ class MarketAdmin(admin.ModelAdmin):
     def order_count(self, obj):
         return obj.orders.filter(status__in=['open', 'partial']).count()
     order_count.short_description = 'Open Orders'
+
+    def thumbnail_preview(self, obj):
+        thumb = obj.display_thumbnail
+        if thumb:
+            return format_html('<img src="{}" width="50" height="auto" />', thumb.url)
+        return '-'
+    thumbnail_preview.short_description = 'Image'
 
     actions = ['settle_yes', 'settle_no', 'halt_trading', 'resume_trading']
 

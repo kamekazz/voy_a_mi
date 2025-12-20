@@ -16,6 +16,9 @@
     <div class="col-lg-8">
         <!-- Market Header -->
         <div class="card mb-4">
+            {% if market.display_image %}
+            <img src="{{ market.display_image.url }}" class="card-img-top" alt="{{ market.title }}" style="max-height: 300px; object-fit: cover;">
+            {% endif %}
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-start">
                     <div>
@@ -34,17 +37,17 @@
                 <!-- Current Prices -->
                 <div class="row text-center mt-4">
                     <div class="col-6">
-                        <div class="p-3 bg-success bg-opacity-10 rounded">
+                        <div class="p-3 bg-success bg-opacity-10 rounded" id="yes-card">
                             <small class="text-muted d-block">YES</small>
                             <span class="price-display yes-color" id="yes-price">{{ market.last_yes_price }}c</span>
-                            <small class="text-muted d-block">{{ market.last_yes_price }}% implied</small>
+                            <small class="text-muted d-block"><span id="yes-implied">{{ market.last_yes_price }}</span>% implied</small>
                         </div>
                     </div>
                     <div class="col-6">
-                        <div class="p-3 bg-danger bg-opacity-10 rounded">
+                        <div class="p-3 bg-danger bg-opacity-10 rounded" id="no-card">
                             <small class="text-muted d-block">NO</small>
                             <span class="price-display no-color" id="no-price">{{ market.last_no_price }}c</span>
-                            <small class="text-muted d-block">{{ market.last_no_price }}% implied</small>
+                            <small class="text-muted d-block"><span id="no-implied">{{ market.last_no_price }}</span>% implied</small>
                         </div>
                     </div>
                 </div>
@@ -464,18 +467,250 @@
 </div>
 {% endblock %}
 
+{% block extra_css %}
+<style>
+    /* WebSocket price update animations */
+    @keyframes priceFlashUp {
+        0% { background-color: rgba(25, 135, 84, 0.4); transform: scale(1.02); }
+        100% { background-color: transparent; transform: scale(1); }
+    }
+    @keyframes priceFlashDown {
+        0% { background-color: rgba(220, 53, 69, 0.4); transform: scale(1.02); }
+        100% { background-color: transparent; transform: scale(1); }
+    }
+    .price-up {
+        animation: priceFlashUp 0.5s ease-out;
+    }
+    .price-down {
+        animation: priceFlashDown 0.5s ease-out;
+    }
+    .price-display {
+        transition: all 0.3s ease;
+    }
+    /* Connection status indicator */
+    .ws-status {
+        position: fixed;
+        bottom: 10px;
+        right: 10px;
+        padding: 5px 10px;
+        border-radius: 4px;
+        font-size: 12px;
+        z-index: 1000;
+        opacity: 0.8;
+    }
+    .ws-status.connected { background-color: #198754; color: white; }
+    .ws-status.disconnected { background-color: #dc3545; color: white; }
+    .ws-status.connecting { background-color: #ffc107; color: black; }
+</style>
+{% endblock %}
+
 {% block extra_js %}
 <script>
 (function() {
     'use strict';
 
-    // Market price data from Django
+    // Market ID for WebSocket connection
+    const marketId = {{ market.pk }};
+
+    // Market price data from Django (will be updated by WebSocket)
     const marketPrices = {
         yesAsk: {{ market.best_yes_ask|default:"null" }},
         noAsk: {{ market.best_no_ask|default:"null" }},
         lastYes: {{ market.last_yes_price|default:50 }},
         lastNo: {{ market.last_no_price|default:50 }}
     };
+
+    // WebSocket connection
+    let socket = null;
+    let reconnectAttempts = 0;
+    const maxReconnectAttempts = 10;
+    const reconnectDelay = 2000;
+
+    // Create connection status indicator
+    function createStatusIndicator() {
+        const indicator = document.createElement('div');
+        indicator.id = 'ws-status';
+        indicator.className = 'ws-status connecting';
+        indicator.textContent = 'Connecting...';
+        document.body.appendChild(indicator);
+        return indicator;
+    }
+
+    // Update status indicator
+    function updateStatus(status, text) {
+        const indicator = document.getElementById('ws-status');
+        if (indicator) {
+            indicator.className = 'ws-status ' + status;
+            indicator.textContent = text;
+            // Auto-hide when connected after 3 seconds
+            if (status === 'connected') {
+                setTimeout(() => {
+                    indicator.style.opacity = '0';
+                    setTimeout(() => indicator.remove(), 500);
+                }, 3000);
+            }
+        }
+    }
+
+    // Connect to WebSocket
+    function connectWebSocket() {
+        const wsScheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
+        const wsUrl = wsScheme + '://' + window.location.host + '/ws/market/' + marketId + '/';
+
+        console.log('Connecting to WebSocket:', wsUrl);
+        socket = new WebSocket(wsUrl);
+
+        socket.onopen = function(e) {
+            console.log('WebSocket connected');
+            reconnectAttempts = 0;
+            updateStatus('connected', 'Live');
+        };
+
+        socket.onmessage = function(e) {
+            const data = JSON.parse(e.data);
+            console.log('WebSocket message:', data);
+            handleMessage(data);
+        };
+
+        socket.onclose = function(e) {
+            console.log('WebSocket closed:', e.code, e.reason);
+            if (reconnectAttempts < maxReconnectAttempts) {
+                updateStatus('disconnected', 'Reconnecting...');
+                reconnectAttempts++;
+                setTimeout(connectWebSocket, reconnectDelay * reconnectAttempts);
+            } else {
+                updateStatus('disconnected', 'Disconnected');
+            }
+        };
+
+        socket.onerror = function(e) {
+            console.error('WebSocket error:', e);
+        };
+    }
+
+    // Handle incoming WebSocket messages
+    function handleMessage(message) {
+        const type = message.type;
+        const data = message.data || message;  // Handle both nested and flat formats
+
+        switch (type) {
+            case 'initial_state':
+                // Initial state on connect
+                updatePrices(data.last_yes_price, data.last_no_price, false);
+                if (data.best_yes_ask) marketPrices.yesAsk = data.best_yes_ask;
+                if (data.best_no_ask) marketPrices.noAsk = data.best_no_ask;
+                console.log('Initial market state received:', data);
+                break;
+
+            case 'market_update':
+                // Live price updates
+                updatePrices(data.last_yes_price, data.last_no_price, true);
+                if (data.best_yes_ask) marketPrices.yesAsk = data.best_yes_ask;
+                if (data.best_no_ask) marketPrices.noAsk = data.best_no_ask;
+                updateQuickBetEstimate();
+                console.log('Market update:', data);
+                break;
+
+            case 'trade_executed':
+                // New trade - add to recent trades table
+                addTradeToTable(data);
+                console.log('Trade executed:', data);
+                break;
+
+            case 'orderbook_update':
+                // Orderbook changed - could refresh orderbook here
+                console.log('Orderbook updated:', data);
+                break;
+
+            case 'pong':
+                // Heartbeat response
+                break;
+        }
+    }
+
+    // Update price displays with animation
+    function updatePrices(newYesPrice, newNoPrice, animate) {
+        const yesPrice = document.getElementById('yes-price');
+        const noPrice = document.getElementById('no-price');
+        const yesImplied = document.getElementById('yes-implied');
+        const noImplied = document.getElementById('no-implied');
+        const yesCard = document.getElementById('yes-card');
+        const noCard = document.getElementById('no-card');
+
+        // Update YES price
+        if (yesPrice && newYesPrice !== undefined) {
+            const oldYes = marketPrices.lastYes;
+            if (newYesPrice !== oldYes) {
+                yesPrice.textContent = newYesPrice + 'c';
+                if (yesImplied) yesImplied.textContent = newYesPrice;
+                marketPrices.lastYes = newYesPrice;
+
+                if (animate && yesCard) {
+                    yesCard.classList.remove('price-up', 'price-down');
+                    void yesCard.offsetWidth; // Trigger reflow
+                    yesCard.classList.add(newYesPrice > oldYes ? 'price-up' : 'price-down');
+                }
+            }
+        }
+
+        // Update NO price
+        if (noPrice && newNoPrice !== undefined) {
+            const oldNo = marketPrices.lastNo;
+            if (newNoPrice !== oldNo) {
+                noPrice.textContent = newNoPrice + 'c';
+                if (noImplied) noImplied.textContent = newNoPrice;
+                marketPrices.lastNo = newNoPrice;
+
+                if (animate && noCard) {
+                    noCard.classList.remove('price-up', 'price-down');
+                    void noCard.offsetWidth; // Trigger reflow
+                    noCard.classList.add(newNoPrice > oldNo ? 'price-up' : 'price-down');
+                }
+            }
+        }
+    }
+
+    // Add new trade to the trades table
+    function addTradeToTable(trade) {
+        const tbody = document.getElementById('trades-tbody');
+        if (!tbody) return;
+
+        const row = document.createElement('tr');
+        row.className = 'orderbook-row';
+        row.style.backgroundColor = 'rgba(255, 193, 7, 0.2)';
+
+        const time = new Date(trade.executed_at);
+        const timeStr = time.toLocaleTimeString('en-US', { hour12: false });
+        const badgeClass = trade.contract_type === 'yes' ? 'bg-success' : 'bg-danger';
+
+        row.innerHTML = `
+            <td>${timeStr}</td>
+            <td><span class="badge ${badgeClass}">${trade.contract_type.toUpperCase()}</span></td>
+            <td>${trade.price}c</td>
+            <td class="text-end">${trade.quantity}</td>
+        `;
+
+        // Insert at top of table
+        tbody.insertBefore(row, tbody.firstChild);
+
+        // Fade out highlight
+        setTimeout(() => {
+            row.style.transition = 'background-color 1s ease';
+            row.style.backgroundColor = 'transparent';
+        }, 100);
+
+        // Keep only last 20 trades
+        while (tbody.children.length > 20) {
+            tbody.removeChild(tbody.lastChild);
+        }
+    }
+
+    // Send ping to keep connection alive
+    function sendPing() {
+        if (socket && socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({ type: 'ping' }));
+        }
+    }
 
     // Get market price for a contract type (Polymarket-style priority)
     function getMarketPrice(contractType) {
@@ -531,6 +766,13 @@
 
     // Initialize
     document.addEventListener('DOMContentLoaded', function() {
+        // Create WebSocket status indicator and connect
+        createStatusIndicator();
+        connectWebSocket();
+
+        // Send ping every 30 seconds to keep connection alive
+        setInterval(sendPing, 30000);
+
         // Limit Order tab listeners
         const priceInput = document.getElementById('price_input');
         const quantityInput = document.getElementById('quantity_input');
@@ -556,6 +798,13 @@
 
         // Initialize Quick Bet estimate
         updateQuickBetEstimate();
+    });
+
+    // Cleanup on page unload
+    window.addEventListener('beforeunload', function() {
+        if (socket) {
+            socket.close();
+        }
     });
 })();
 </script>

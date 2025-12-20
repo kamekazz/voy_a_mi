@@ -107,6 +107,20 @@ class Event(models.Model):
         related_name='created_events'
     )
 
+    # Images (optional)
+    image = models.ImageField(
+        upload_to='events/images/',
+        blank=True,
+        null=True,
+        help_text="Main event image (recommended: 800x600px)"
+    )
+    thumbnail = models.ImageField(
+        upload_to='events/thumbnails/',
+        blank=True,
+        null=True,
+        help_text="Thumbnail for listings (recommended: 200x150px)"
+    )
+
     class Meta:
         ordering = ['-trading_starts']
         indexes = [
@@ -207,6 +221,20 @@ class Market(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True)
 
+    # Images (optional)
+    image = models.ImageField(
+        upload_to='markets/images/',
+        blank=True,
+        null=True,
+        help_text="Market-specific image (recommended: 800x600px)"
+    )
+    thumbnail = models.ImageField(
+        upload_to='markets/thumbnails/',
+        blank=True,
+        null=True,
+        help_text="Thumbnail for listings (recommended: 200x150px)"
+    )
+
     class Meta:
         unique_together = ['event', 'slug']
         ordering = ['event', 'title']
@@ -237,6 +265,16 @@ class Market(models.Model):
         if self.best_yes_bid and self.best_yes_ask:
             return self.best_yes_ask - self.best_yes_bid
         return None
+
+    @property
+    def display_image(self):
+        """Return market image, or fall back to event image if not set."""
+        return self.image if self.image else self.event.image
+
+    @property
+    def display_thumbnail(self):
+        """Return market thumbnail, or fall back to event thumbnail if not set."""
+        return self.thumbnail if self.thumbnail else self.event.thumbnail
 
 
 class Order(models.Model):

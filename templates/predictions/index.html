@@ -20,6 +20,9 @@
         {% for market in popular_markets %}
         <div class="col-md-6 col-lg-4">
             <div class="card h-100 shadow-sm">
+                {% if market.display_thumbnail %}
+                <img src="{{ market.display_thumbnail.url }}" class="card-img-top" alt="{{ market.title }}" style="height: 150px; object-fit: cover;">
+                {% endif %}
                 <div class="card-body">
                     <h5 class="card-title">
                         <a href="{% url 'predictions:market_detail' market.pk %}" class="text-decoration-none">
@@ -74,15 +77,20 @@
         {% for event in active_events %}
         <a href="{% url 'predictions:event_detail' event.slug %}" class="list-group-item list-group-item-action">
             <div class="d-flex w-100 justify-content-between">
-                <div>
-                    <h5 class="mb-1">{{ event.title }}</h5>
-                    <p class="mb-1 text-muted">{{ event.description|truncatewords:20 }}</p>
+                <div class="d-flex">
+                    {% if event.thumbnail %}
+                    <img src="{{ event.thumbnail.url }}" class="me-3 rounded" alt="{{ event.title }}" style="width: 60px; height: 60px; object-fit: cover;">
+                    {% endif %}
+                    <div>
+                        <h5 class="mb-1">{{ event.title }}</h5>
+                        <p class="mb-1 text-muted">{{ event.description|truncatewords:20 }}</p>
                     <small>
                         {% if event.category %}
                         <span class="badge bg-secondary">{{ event.category.name }}</span>
                         {% endif %}
                         <span class="badge bg-info">{{ event.markets.count }} market{{ event.markets.count|pluralize }}</span>
                     </small>
+                    </div>
                 </div>
                 <div class="text-end">
                     <span class="badge bg-success">Active</span>

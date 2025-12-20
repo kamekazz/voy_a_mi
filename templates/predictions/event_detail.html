@@ -13,6 +13,9 @@
 
 <div class="row mb-4">
     <div class="col-lg-8">
+        {% if event.image %}
+        <img src="{{ event.image.url }}" class="img-fluid rounded mb-3" alt="{{ event.title }}" style="max-height: 400px; width: 100%; object-fit: cover;">
+        {% endif %}
         <h1>{{ event.title }}</h1>
         <p class="lead text-muted">{{ event.description }}</p>
 
@@ -65,6 +68,9 @@
     {% for market in markets %}
     <div class="col-md-6 col-lg-4">
         <div class="card h-100 shadow-sm">
+            {% if market.display_thumbnail %}
+            <img src="{{ market.display_thumbnail.url }}" class="card-img-top" alt="{{ market.title }}" style="height: 120px; object-fit: cover;">
+            {% endif %}
             <div class="card-body">
                 <h5 class="card-title">
                     <a href="{% url 'predictions:market_detail' market.pk %}" class="text-decoration-none">
