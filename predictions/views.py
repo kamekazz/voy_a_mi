@@ -8,11 +8,10 @@ from django.db.models import Sum, Q
 from django.utils import timezone
 from decimal import Decimal
 
-from .models import User, Category, Event, Market, Order, Trade, Position, Transaction, AMMTrade
+from .models import User, Category, Event, Market, Order, Trade, Position, Transaction
 from .forms import UserRegistrationForm
 from .forms import OrderForm, QuickOrderForm
 from .matching_engine import MatchingEngine, get_orderbook
-from .amm_engine import AMMEngine
 from .exceptions import (
     TradingError,
     InsufficientFundsError,
@@ -33,17 +32,6 @@ def index(request):
         status=Market.Status.ACTIVE,
         event__status=Event.Status.ACTIVE
     ).select_related('event').order_by('-total_volume')[:6]
-
-    # Calculate AMM prices for markets that have AMM enabled
-    for market in popular_markets:
-        if market.amm_enabled:
-            amm = AMMEngine(market)
-            prices = amm.get_prices()
-            market.current_yes_price = prices['yes']
-            market.current_no_price = prices['no']
-        else:
-            market.current_yes_price = market.last_yes_price
-            market.current_no_price = market.last_no_price
 
     # Get categories with event counts
     categories = Category.objects.annotate(
@@ -99,19 +87,6 @@ def event_detail(request, slug):
     )
     markets = event.markets.all()
 
-    # Calculate AMM prices for markets that have AMM enabled
-    for market in markets:
-        if market.amm_enabled:
-            amm = AMMEngine(market)
-            prices = amm.get_prices()
-            # Attach AMM prices to the market object for template use
-            market.current_yes_price = prices['yes']
-            market.current_no_price = prices['no']
-        else:
-            # Use stored orderbook prices
-            market.current_yes_price = market.last_yes_price
-            market.current_no_price = market.last_no_price
-
     context = {
         'event': event,
         'markets': markets,
@@ -129,19 +104,10 @@ def market_detail(request, pk):
     # Get orderbook
     orderbook = get_orderbook(market, depth=10)
 
-    # Get AMM prices if enabled
-    amm_prices = None
-    if market.amm_enabled:
-        amm = AMMEngine(market)
-        amm_prices = amm.get_prices()
-
-    # Get recent trades (both orderbook and AMM)
+    # Get recent trades
     recent_trades = Trade.objects.filter(market=market).select_related(
         'buyer', 'seller'
-    )[:20]
-    recent_amm_trades = AMMTrade.objects.filter(
-        pool__market=market
-    ).select_related('user')[:20]
+    ).order_by('-executed_at')[:20]
 
     # Get user's position and open orders if logged in
     user_position = None
@@ -163,9 +129,7 @@ def market_detail(request, pk):
         'market': market,
         'event': market.event,
         'orderbook': orderbook,
-        'amm_prices': amm_prices,
         'recent_trades': recent_trades,
-        'recent_amm_trades': recent_amm_trades,
         'user_position': user_position,
         'user_orders': user_orders,
         'order_form': order_form,
@@ -176,17 +140,15 @@ def market_detail(request, pk):
 @login_required
 @require_POST
 def place_order(request, pk):
-    """Place a new order on a market."""
+    """Place a new order on a market (Order Book only)."""
     market = get_object_or_404(Market, pk=pk)
 
     # Parse order parameters
     side = request.POST.get('side')
     contract_type = request.POST.get('contract_type')
-    order_type = request.POST.get('order_type', 'market')  # Default to market order
 
     try:
         quantity = int(request.POST.get('quantity', 0))
-        # Price is optional for market orders
         price_str = request.POST.get('price', '')
         price = int(price_str) if price_str and price_str.strip() else None
     except (ValueError, TypeError):
@@ -202,107 +164,36 @@ def place_order(request, pk):
         messages.error(request, "Invalid contract type.")
         return redirect('predictions:market_detail', pk=pk)
 
-    if order_type not in ['market', 'limit']:
-        messages.error(request, "Invalid order type.")
-        return redirect('predictions:market_detail', pk=pk)
-
     # Price is required for limit orders
-    if order_type == 'limit' and not price:
+    if not price:
         messages.error(request, "Price is required for limit orders.")
         return redirect('predictions:market_detail', pk=pk)
 
     try:
-        # Route market orders to AMM if enabled
-        if order_type == 'market' and market.amm_enabled:
-            # Use AMM for instant execution
-            amm = AMMEngine(market)
-            trade = amm.execute_trade(
-                user=request.user,
-                side=side,
-                contract_type=contract_type,
-                quantity=quantity
-            )
+        # Use Order Book matching engine
+        engine = MatchingEngine(market)
+        order, trades = engine.place_order(
+            user=request.user,
+            side=side,
+            contract_type=contract_type,
+            price=price,
+            quantity=quantity,
+            order_type='limit'
+        )
+
+        if trades:
+            total_filled = sum(t.quantity for t in trades)
             messages.success(
                 request,
-                f"Trade executed! {side.upper()} {quantity} {contract_type.upper()} "
-                f"@ {trade.avg_price:.1f}c avg (${trade.total_cost:.2f})"
+                f"Order executed! {len(trades)} trade(s), "
+                f"{total_filled} contracts filled @ {order.price}c."
             )
-        elif order_type == 'limit' and market.amm_enabled:
-            # For limit orders, check if AMM offers a better price
-            amm = AMMEngine(market)
-            amm_price = amm.get_price(contract_type)
-
-            # Determine if AMM price is better than limit price
-            # BUY: If user's limit >= AMM price, they'd pay at most their limit, AMM is better
-            # SELL: If user's limit <= AMM price, they'd receive at least their limit, AMM is better
-            use_amm = False
-            if side == 'buy' and price >= amm_price:
-                use_amm = True
-            elif side == 'sell' and price <= amm_price:
-                use_amm = True
-
-            if use_amm:
-                # Execute through AMM for better price
-                trade = amm.execute_trade(
-                    user=request.user,
-                    side=side,
-                    contract_type=contract_type,
-                    quantity=quantity
-                )
-                messages.success(
-                    request,
-                    f"Trade executed via AMM! {side.upper()} {quantity} {contract_type.upper()} "
-                    f"@ {trade.avg_price:.1f}c avg (${trade.total_cost:.2f}) - "
-                    f"Better than your limit of {price}c"
-                )
-            else:
-                # AMM price not favorable, use orderbook
-                engine = MatchingEngine(market)
-                order, trades = engine.place_order(
-                    user=request.user,
-                    side=side,
-                    contract_type=contract_type,
-                    price=price,
-                    quantity=quantity,
-                    order_type=order_type
-                )
-
-                if trades:
-                    messages.success(
-                        request,
-                        f"Order executed! {len(trades)} trade(s), "
-                        f"{order.filled_quantity} contracts filled @ {order.price}c."
-                    )
-                else:
-                    messages.success(
-                        request,
-                        f"Limit order placed: {side.upper()} {quantity} "
-                        f"{contract_type.upper()} @ {price}c (AMM price: {amm_price}c)"
-                    )
         else:
-            # Use limit orderbook for limit orders (AMM disabled)
-            engine = MatchingEngine(market)
-            order, trades = engine.place_order(
-                user=request.user,
-                side=side,
-                contract_type=contract_type,
-                price=price,
-                quantity=quantity,
-                order_type=order_type
+            messages.success(
+                request,
+                f"Limit order placed: {side.upper()} {quantity} "
+                f"{contract_type.upper()} @ {price}c"
             )
-
-            if trades:
-                messages.success(
-                    request,
-                    f"Order executed! {len(trades)} trade(s), "
-                    f"{order.filled_quantity} contracts filled @ {order.price}c."
-                )
-            else:
-                messages.success(
-                    request,
-                    f"Limit order placed: {side.upper()} {quantity} "
-                    f"{contract_type.upper()} @ {price}c"
-                )
 
     except InsufficientFundsError as e:
         messages.error(request, str(e))
@@ -536,56 +427,6 @@ def api_user_position(request, pk):
             'unrealized_pnl': 0,
             'realized_pnl': 0,
         })
-
-
-def api_amm_quote(request, pk):
-    """Get a quote from the AMM for a potential trade."""
-    market = get_object_or_404(Market, pk=pk)
-
-    if not market.amm_enabled:
-        return JsonResponse({'error': 'AMM not enabled for this market'}, status=400)
-
-    side = request.GET.get('side', 'buy')
-    contract_type = request.GET.get('contract_type', 'yes')
-    try:
-        quantity = int(request.GET.get('quantity', 1))
-    except ValueError:
-        return JsonResponse({'error': 'Invalid quantity'}, status=400)
-
-    if side not in ['buy', 'sell']:
-        return JsonResponse({'error': 'Invalid side'}, status=400)
-
-    if contract_type not in ['yes', 'no']:
-        return JsonResponse({'error': 'Invalid contract type'}, status=400)
-
-    amm = AMMEngine(market)
-    quote = amm.get_quote(side, contract_type, quantity)
-
-    return JsonResponse({
-        'market_id': market.pk,
-        'quote': quote,
-        'current_prices': amm.get_prices(),
-    })
-
-
-def api_amm_prices(request, pk):
-    """Get current AMM prices for a market."""
-    market = get_object_or_404(Market, pk=pk)
-
-    if not market.amm_enabled:
-        return JsonResponse({'error': 'AMM not enabled for this market'}, status=400)
-
-    amm = AMMEngine(market)
-    prices = amm.get_prices()
-
-    return JsonResponse({
-        'market_id': market.pk,
-        'yes_price': prices['yes'],
-        'no_price': prices['no'],
-        'last_yes_price': market.last_yes_price,
-        'last_no_price': market.last_no_price,
-        'total_volume': market.total_volume,
-    })
 
 
 def register(request):

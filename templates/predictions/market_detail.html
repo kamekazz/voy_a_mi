@@ -36,23 +36,18 @@
                     <div class="col-6">
                         <div class="p-3 bg-success bg-opacity-10 rounded">
                             <small class="text-muted d-block">YES</small>
-                            <span class="price-display yes-color" id="amm-yes-price">{% if amm_prices %}{{ amm_prices.yes }}{% else %}{{ market.last_yes_price }}{% endif %}c</span>
-                            <small class="text-muted d-block">{% if amm_prices %}{{ amm_prices.yes }}{% else %}{{ market.yes_probability|floatformat:0 }}{% endif %}% implied</small>
+                            <span class="price-display yes-color" id="yes-price">{{ market.last_yes_price }}c</span>
+                            <small class="text-muted d-block">{{ market.last_yes_price }}% implied</small>
                         </div>
                     </div>
                     <div class="col-6">
                         <div class="p-3 bg-danger bg-opacity-10 rounded">
                             <small class="text-muted d-block">NO</small>
-                            <span class="price-display no-color" id="amm-no-price">{% if amm_prices %}{{ amm_prices.no }}{% else %}{{ market.last_no_price }}{% endif %}c</span>
-                            <small class="text-muted d-block">{% if amm_prices %}{{ amm_prices.no }}{% else %}{{ market.last_no_price }}{% endif %}% implied</small>
+                            <span class="price-display no-color" id="no-price">{{ market.last_no_price }}c</span>
+                            <small class="text-muted d-block">{{ market.last_no_price }}% implied</small>
                         </div>
                     </div>
                 </div>
-                {% if market.amm_enabled %}
-                <div class="text-center mt-2">
-                    <span class="badge bg-info"><i class="bi bi-robot"></i> AMM Enabled - Instant Trading</span>
-                </div>
-                {% endif %}
 
                 <div class="row mt-3 text-center text-muted small">
                     <div class="col-4">
@@ -74,29 +69,12 @@
         {% if market.is_trading_active %}
         <div class="card mb-4">
             <div class="card-header">
-                <h5 class="mb-0"><i class="bi bi-lightning"></i> Place Order</h5>
+                <h5 class="mb-0"><i class="bi bi-lightning"></i> Place Limit Order</h5>
             </div>
             <div class="card-body">
                 {% if user.is_authenticated %}
                 <form method="post" action="{% url 'predictions:place_order' market.pk %}" id="order-form">
                     {% csrf_token %}
-
-                    <!-- Order Type Toggle -->
-                    <div class="mb-3">
-                        <label class="form-label">Order Type</label>
-                        <div class="btn-group w-100" role="group">
-                            <input type="radio" class="btn-check" name="order_type" id="type_market" value="market" checked>
-                            <label class="btn btn-outline-primary" for="type_market">
-                                <i class="bi bi-lightning-fill"></i> Market
-                            </label>
-
-                            <input type="radio" class="btn-check" name="order_type" id="type_limit" value="limit">
-                            <label class="btn btn-outline-secondary" for="type_limit">
-                                <i class="bi bi-list-ol"></i> Limit
-                            </label>
-                        </div>
-                        <small class="text-muted d-block mt-1" id="order_type_hint">Market orders execute at best available price</small>
-                    </div>
 
                     <!-- Order Side -->
                     <div class="mb-3">
@@ -115,73 +93,42 @@
                         <label class="form-label">Contract</label>
                         <div class="btn-group w-100" role="group">
                             <input type="radio" class="btn-check" name="contract_type" id="type_yes" value="yes" checked>
-                            <label class="btn btn-outline-success" for="type_yes" id="yes_label">
-                                YES @ <span id="yes_price">{{ market.best_yes_ask|default:market.last_yes_price }}</span>c
-                            </label>
+                            <label class="btn btn-outline-success" for="type_yes">YES</label>
 
                             <input type="radio" class="btn-check" name="contract_type" id="type_no" value="no">
-                            <label class="btn btn-outline-danger" for="type_no" id="no_label">
-                                NO @ <span id="no_price">{{ market.best_no_ask|default:market.last_no_price }}</span>c
-                            </label>
+                            <label class="btn btn-outline-danger" for="type_no">NO</label>
                         </div>
+                    </div>
+
+                    <!-- Price -->
+                    <div class="mb-3">
+                        <label class="form-label">Price (1-99c)</label>
+                        <div class="input-group">
+                            <input type="number" class="form-control" name="price" id="price_input"
+                                   min="1" max="99" value="50" required>
+                            <span class="input-group-text">c</span>
+                        </div>
+                        <small class="text-muted">Each contract pays $1 if correct, $0 if wrong</small>
                     </div>
 
                     <!-- Quantity -->
                     <div class="mb-3">
                         <label class="form-label">Quantity</label>
-                        <input type="number" class="form-control" name="quantity"
+                        <input type="number" class="form-control" name="quantity" id="quantity_input"
                                min="1" value="10" required>
                     </div>
-
-                    <!-- Price (only for limit orders) -->
-                    <div class="mb-3" id="price_section" style="display: none;">
-                        <label class="form-label">Price (1-99c)</label>
-                        <div class="input-group">
-                            <input type="number" class="form-control" name="price" id="price_input"
-                                   min="1" max="99" value="{{ market.last_yes_price }}">
-                            <span class="input-group-text">c</span>
-                        </div>
-                    </div>
-
-                    {% if market.amm_enabled %}
-                    <!-- Live Quote Display -->
-                    <div class="card bg-light mb-3" id="quote-card">
-                        <div class="card-body py-2">
-                            <div class="row text-center">
-                                <div class="col-4">
-                                    <small class="text-muted d-block">Est. Cost</small>
-                                    <strong id="quote-cost">$0.00</strong>
-                                </div>
-                                <div class="col-4">
-                                    <small class="text-muted d-block">Avg Price</small>
-                                    <strong id="quote-avg-price">-</strong>
-                                </div>
-                                <div class="col-4">
-                                    <small class="text-muted d-block">Price Impact</small>
-                                    <strong id="quote-impact" class="text-muted">0c</strong>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    {% else %}
-                    <div class="d-flex justify-content-between align-items-center mb-3">
-                        <span class="text-muted">
-                            Available: <strong>${{ user.available_balance|floatformat:2 }}</strong>
-                        </span>
-                        <span class="text-muted" id="order_cost">
-                            Max Cost: <strong>$0.00</strong>
-                        </span>
-                    </div>
-                    {% endif %}
 
                     <div class="d-flex justify-content-between align-items-center mb-3">
                         <span class="text-muted">
                             Balance: <strong>${{ user.available_balance|floatformat:2 }}</strong>
                         </span>
+                        <span class="text-muted" id="order_cost">
+                            Max Cost: <strong>$5.00</strong>
+                        </span>
                     </div>
 
-                    <button type="submit" class="btn btn-primary btn-lg w-100" id="submit-btn">
-                        <i class="bi bi-check-circle"></i> <span id="submit-text">Place Order</span>
+                    <button type="submit" class="btn btn-primary btn-lg w-100">
+                        <i class="bi bi-check-circle"></i> Place Order
                     </button>
                 </form>
                 {% else %}
@@ -294,39 +241,20 @@
                 <h5 class="mb-0"><i class="bi bi-clock-history"></i> Recent Trades</h5>
             </div>
             <div class="card-body">
-                {% if recent_amm_trades or recent_trades %}
+                {% if recent_trades %}
                 <table class="table table-sm table-hover">
                     <thead>
                         <tr class="small text-muted">
                             <th>Time</th>
-                            <th>Side</th>
                             <th>Type</th>
                             <th>Price</th>
                             <th class="text-end">Qty</th>
                         </tr>
                     </thead>
                     <tbody id="trades-tbody">
-                        {% for trade in recent_amm_trades %}
-                        <tr class="orderbook-row">
-                            <td>{{ trade.executed_at|date:"H:i:s" }}</td>
-                            <td>
-                                <span class="badge {% if trade.side == 'buy' %}bg-success{% else %}bg-danger{% endif %}">
-                                    {{ trade.side|upper }}
-                                </span>
-                            </td>
-                            <td>
-                                <span class="badge {% if trade.contract_type == 'yes' %}bg-success{% else %}bg-danger{% endif %}">
-                                    {{ trade.contract_type|upper }}
-                                </span>
-                            </td>
-                            <td>{{ trade.avg_price|floatformat:1 }}c</td>
-                            <td class="text-end">{{ trade.quantity }}</td>
-                        </tr>
-                        {% endfor %}
                         {% for trade in recent_trades %}
                         <tr class="orderbook-row">
                             <td>{{ trade.executed_at|date:"H:i:s" }}</td>
-                            <td><span class="badge bg-secondary">OB</span></td>
                             <td>
                                 <span class="badge {% if trade.contract_type == 'yes' %}bg-success{% else %}bg-danger{% endif %}">
                                     {{ trade.contract_type|upper }}
@@ -434,6 +362,10 @@
                         <td class="text-muted">Total Volume</td>
                         <td class="text-end">{{ market.total_volume }}</td>
                     </tr>
+                    <tr>
+                        <td class="text-muted">Shares Outstanding</td>
+                        <td class="text-end">{{ market.total_shares_outstanding }}</td>
+                    </tr>
                 </table>
             </div>
         </div>
@@ -461,647 +393,29 @@
 (function() {
     'use strict';
 
-    // Configuration
-    const MARKET_ID = {{ market.pk }};
-    const AMM_ENABLED = {% if market.amm_enabled %}true{% else %}false{% endif %};
-    const WS_URL = (window.location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + window.location.host + '/ws/market/' + MARKET_ID + '/';
-    const QUOTE_URL = '/api/markets/' + MARKET_ID + '/quote/';
-    const PRICES_URL = '/api/markets/' + MARKET_ID + '/prices/';
-    const RECONNECT_DELAY = 3000;
-    const MAX_RECONNECT_ATTEMPTS = 10;
-
-    let ws = null;
-    let reconnectAttempts = 0;
-    let reconnectTimeout = null;
-
-    // Connect to WebSocket
-    function connect() {
-        if (ws && ws.readyState === WebSocket.OPEN) {
-            return;
-        }
-
-        console.log('[WS] Connecting to:', WS_URL);
-        ws = new WebSocket(WS_URL);
-
-        ws.onopen = function() {
-            console.log('[WS] Connected');
-            reconnectAttempts = 0;
-            showConnectionStatus('connected');
-        };
-
-        ws.onmessage = function(event) {
-            try {
-                const message = JSON.parse(event.data);
-                handleMessage(message);
-            } catch (e) {
-                console.error('[WS] Error parsing message:', e);
-            }
-        };
-
-        ws.onclose = function(event) {
-            console.log('[WS] Disconnected:', event.code, event.reason);
-            showConnectionStatus('disconnected');
-            scheduleReconnect();
-        };
-
-        ws.onerror = function(error) {
-            console.error('[WS] Error:', error);
-        };
-    }
-
-    // Schedule reconnection
-    function scheduleReconnect() {
-        if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-            console.log('[WS] Max reconnect attempts reached');
-            showConnectionStatus('failed');
-            return;
-        }
-
-        reconnectAttempts++;
-        const delay = RECONNECT_DELAY * Math.min(reconnectAttempts, 5);
-        console.log('[WS] Reconnecting in ' + delay + 'ms (attempt ' + reconnectAttempts + ')');
-
-        clearTimeout(reconnectTimeout);
-        reconnectTimeout = setTimeout(connect, delay);
-    }
-
-    // Handle incoming messages
-    function handleMessage(message) {
-        switch (message.type) {
-            case 'initial_state':
-                updateMarketState(message.data);
-                updateOrderbook(message.data.orderbook);
-                break;
-            case 'market_update':
-                updateMarketState(message.data);
-                break;
-            case 'trade_executed':
-                addTradeToHistory(message.data);
-                highlightPriceChange(message.data.contract_type);
-                break;
-            case 'orderbook_update':
-                updateOrderbook(message.data.orderbook);
-                break;
-            case 'pong':
-                break;
-            default:
-                console.log('[WS] Unknown message type:', message.type);
-        }
-    }
-
-    // Update market prices and stats
-    function updateMarketState(data) {
-        // Update YES price
-        const yesPrice = document.querySelector('.bg-success.bg-opacity-10 .price-display');
-        if (yesPrice && data.last_yes_price !== undefined) {
-            const oldValue = yesPrice.textContent;
-            yesPrice.textContent = data.last_yes_price + 'c';
-            if (oldValue !== yesPrice.textContent) {
-                flashElement(yesPrice);
-            }
-        }
-
-        // Update NO price
-        const noPrice = document.querySelector('.bg-danger.bg-opacity-10 .price-display');
-        if (noPrice && data.last_no_price !== undefined) {
-            const oldValue = noPrice.textContent;
-            noPrice.textContent = data.last_no_price + 'c';
-            if (oldValue !== noPrice.textContent) {
-                flashElement(noPrice);
-            }
-        }
-
-        // Update implied probabilities
-        const yesImplied = document.querySelector('.bg-success.bg-opacity-10 small:last-child');
-        if (yesImplied && data.last_yes_price !== undefined) {
-            yesImplied.textContent = data.last_yes_price + '% implied';
-        }
-        const noImplied = document.querySelector('.bg-danger.bg-opacity-10 small:last-child');
-        if (noImplied && data.last_no_price !== undefined) {
-            noImplied.textContent = data.last_no_price + '% implied';
-        }
-
-        // Update Market Stats sidebar
-        updateMarketStats(data);
-
-        // Update form prices for market orders
-        updateFormPrices(data);
-    }
-
-    // Update Market Stats sidebar
-    function updateMarketStats(data) {
-        const statsTable = document.querySelector('.card:has(.bi-graph-up) table');
-        if (!statsTable) return;
-
-        const rows = statsTable.querySelectorAll('tr');
-        rows.forEach(function(row) {
-            const label = row.querySelector('td:first-child');
-            const valueCell = row.querySelector('td:last-child');
-            if (!label || !valueCell) return;
-
-            const labelText = label.textContent.trim();
-            const formatValue = function(val) { return val !== null && val !== undefined ? val + 'c' : '-'; };
-
-            if (labelText === 'Best YES Bid') {
-                valueCell.textContent = formatValue(data.best_yes_bid);
-            } else if (labelText === 'Best YES Ask') {
-                valueCell.textContent = formatValue(data.best_yes_ask);
-            } else if (labelText === 'Best NO Bid') {
-                valueCell.textContent = formatValue(data.best_no_bid);
-            } else if (labelText === 'Best NO Ask') {
-                valueCell.textContent = formatValue(data.best_no_ask);
-            } else if (labelText === 'Total Volume' && data.total_volume !== undefined) {
-                valueCell.textContent = data.total_volume;
-            }
-        });
-    }
-
-    // Update orderbook display
-    function updateOrderbook(orderbook) {
-        if (!orderbook) return;
-
-        // Helper to render orderbook levels
-        function renderLevels(tableSelector, levels, isBid, emptyText) {
-            const tables = document.querySelectorAll(tableSelector);
-            if (tables.length === 0) return;
-
-            const tbody = tables[0].querySelector('tbody');
-            if (!tbody) return;
-
-            if (!levels || levels.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="2" class="text-muted text-center">' + emptyText + '</td></tr>';
-                return;
-            }
-
-            let html = '';
-            levels.forEach(function(level) {
-                const rowClass = isBid ? 'orderbook-row bg-success bg-opacity-10' : 'orderbook-row';
-                html += '<tr class="' + rowClass + '">';
-                html += '<td>' + level.price + 'c</td>';
-                html += '<td class="text-end">' + level.quantity + '</td>';
-                html += '</tr>';
-            });
-            tbody.innerHTML = html;
-        }
-
-        // YES orderbook (left column)
-        const leftCol = document.querySelector('.col-6:first-child');
-        if (leftCol) {
-            const tables = leftCol.querySelectorAll('table');
-            if (tables.length >= 2) {
-                // First table is bids
-                const bidsTbody = tables[0].querySelector('tbody');
-                if (bidsTbody) {
-                    if (orderbook.yes_bids && orderbook.yes_bids.length > 0) {
-                        let html = '';
-                        orderbook.yes_bids.forEach(function(level) {
-                            html += '<tr class="orderbook-row bg-success bg-opacity-10">';
-                            html += '<td class="yes-color">' + level.price + 'c</td>';
-                            html += '<td class="text-end">' + level.quantity + '</td>';
-                            html += '</tr>';
-                        });
-                        bidsTbody.innerHTML = html;
-                    } else {
-                        bidsTbody.innerHTML = '<tr><td colspan="2" class="text-muted text-center">No bids</td></tr>';
-                    }
-                }
-                // Second table is asks
-                const asksTbody = tables[1].querySelector('tbody');
-                if (asksTbody) {
-                    if (orderbook.yes_asks && orderbook.yes_asks.length > 0) {
-                        let html = '';
-                        orderbook.yes_asks.forEach(function(level) {
-                            html += '<tr class="orderbook-row">';
-                            html += '<td>' + level.price + 'c</td>';
-                            html += '<td class="text-end">' + level.quantity + '</td>';
-                            html += '</tr>';
-                        });
-                        asksTbody.innerHTML = html;
-                    } else {
-                        asksTbody.innerHTML = '<tr><td colspan="2" class="text-muted text-center">No asks</td></tr>';
-                    }
-                }
-            }
-        }
-
-        // NO orderbook (right column)
-        const rightCol = document.querySelector('.col-6:last-child');
-        if (rightCol) {
-            const tables = rightCol.querySelectorAll('table');
-            if (tables.length >= 2) {
-                // First table is bids
-                const bidsTbody = tables[0].querySelector('tbody');
-                if (bidsTbody) {
-                    if (orderbook.no_bids && orderbook.no_bids.length > 0) {
-                        let html = '';
-                        orderbook.no_bids.forEach(function(level) {
-                            html += '<tr class="orderbook-row bg-danger bg-opacity-10">';
-                            html += '<td class="no-color">' + level.price + 'c</td>';
-                            html += '<td class="text-end">' + level.quantity + '</td>';
-                            html += '</tr>';
-                        });
-                        bidsTbody.innerHTML = html;
-                    } else {
-                        bidsTbody.innerHTML = '<tr><td colspan="2" class="text-muted text-center">No bids</td></tr>';
-                    }
-                }
-                // Second table is asks
-                const asksTbody = tables[1].querySelector('tbody');
-                if (asksTbody) {
-                    if (orderbook.no_asks && orderbook.no_asks.length > 0) {
-                        let html = '';
-                        orderbook.no_asks.forEach(function(level) {
-                            html += '<tr class="orderbook-row">';
-                            html += '<td>' + level.price + 'c</td>';
-                            html += '<td class="text-end">' + level.quantity + '</td>';
-                            html += '</tr>';
-                        });
-                        asksTbody.innerHTML = html;
-                    } else {
-                        asksTbody.innerHTML = '<tr><td colspan="2" class="text-muted text-center">No asks</td></tr>';
-                    }
-                }
-            }
-        }
-    }
-
-    // Add new trade to recent trades
-    function addTradeToHistory(trade) {
-        const tradesCard = document.querySelector('.card:has(.bi-clock-history)');
-        if (!tradesCard) return;
-
-        let tbody = tradesCard.querySelector('tbody');
-        const noTradesMsg = tradesCard.querySelector('.text-muted.text-center');
-
-        // If there was a "No trades yet" message, create table
-        if (noTradesMsg && !tbody) {
-            const cardBody = tradesCard.querySelector('.card-body');
-            cardBody.innerHTML =
-                '<table class="table table-sm table-hover">' +
-                '<thead><tr class="small text-muted">' +
-                '<th>Time</th><th>Type</th><th>Price</th><th class="text-end">Qty</th>' +
-                '</tr></thead><tbody></tbody></table>';
-            tbody = cardBody.querySelector('tbody');
-        }
-
-        if (!tbody) return;
-
-        // Format time from ISO string
-        const time = new Date(trade.executed_at);
-        const timeStr = time.toLocaleTimeString('en-US', {
-            hour12: false,
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit'
-        });
-
-        // Create new row
-        const newRow = document.createElement('tr');
-        newRow.className = 'orderbook-row';
-        const badgeClass = trade.contract_type === 'yes' ? 'bg-success' : 'bg-danger';
-        newRow.innerHTML =
-            '<td>' + timeStr + '</td>' +
-            '<td><span class="badge ' + badgeClass + '">' + trade.contract_type.toUpperCase() + '</span></td>' +
-            '<td>' + trade.price + 'c</td>' +
-            '<td class="text-end">' + trade.quantity + '</td>';
-
-        // Flash effect
-        newRow.style.backgroundColor = 'rgba(255, 193, 7, 0.3)';
-        setTimeout(function() {
-            newRow.style.transition = 'background-color 1s ease';
-            newRow.style.backgroundColor = '';
-        }, 100);
-
-        // Add to top of table
-        tbody.insertBefore(newRow, tbody.firstChild);
-
-        // Limit to 20 rows
-        while (tbody.children.length > 20) {
-            tbody.removeChild(tbody.lastChild);
-        }
-    }
-
-    // Visual feedback for price changes
-    function flashElement(element) {
-        if (!element) return;
-        element.style.transition = 'none';
-        element.style.backgroundColor = 'rgba(255, 193, 7, 0.5)';
-        setTimeout(function() {
-            element.style.transition = 'background-color 1s ease';
-            element.style.backgroundColor = '';
-        }, 100);
-    }
-
-    function highlightPriceChange(contractType) {
-        const selector = contractType === 'yes'
-            ? '.bg-success.bg-opacity-10 .price-display'
-            : '.bg-danger.bg-opacity-10 .price-display';
-        const priceEl = document.querySelector(selector);
-        flashElement(priceEl);
-    }
-
-    // Connection status indicator
-    function showConnectionStatus(status) {
-        let indicator = document.getElementById('ws-status');
-        if (!indicator) {
-            indicator = document.createElement('div');
-            indicator.id = 'ws-status';
-            indicator.style.cssText = 'position: fixed; bottom: 20px; right: 20px; padding: 8px 16px; border-radius: 4px; font-size: 12px; z-index: 9999;';
-            document.body.appendChild(indicator);
-        }
-
-        if (status === 'connected') {
-            indicator.textContent = 'Live';
-            indicator.style.backgroundColor = '#198754';
-            indicator.style.color = 'white';
-            setTimeout(function() { indicator.style.opacity = '0.5'; }, 2000);
-        } else if (status === 'disconnected') {
-            indicator.textContent = 'Reconnecting...';
-            indicator.style.backgroundColor = '#ffc107';
-            indicator.style.color = 'black';
-            indicator.style.opacity = '1';
-        } else if (status === 'failed') {
-            indicator.textContent = 'Offline - Refresh page';
-            indicator.style.backgroundColor = '#dc3545';
-            indicator.style.color = 'white';
-            indicator.style.opacity = '1';
-        }
-    }
-
-    // Current market prices (updated via WebSocket)
-    let currentYesPrice = {{ market.best_yes_ask|default:market.last_yes_price }};
-    let currentNoPrice = {{ market.best_no_ask|default:market.last_no_price }};
-
-    // Order type toggle functionality
-    function initOrderTypeToggle() {
-        const marketRadio = document.getElementById('type_market');
-        const limitRadio = document.getElementById('type_limit');
-        const priceSection = document.getElementById('price_section');
-        const priceInput = document.getElementById('price_input');
-        const orderTypeHint = document.getElementById('order_type_hint');
-
-        function updateOrderTypeUI() {
-            if (!priceSection) return;
-
-            if (limitRadio && limitRadio.checked) {
-                priceSection.style.display = 'block';
-                if (priceInput) priceInput.required = true;
-                if (orderTypeHint) orderTypeHint.textContent = 'Limit orders sit in orderbook until price is matched';
-            } else {
-                priceSection.style.display = 'none';
-                if (priceInput) priceInput.required = false;
-                if (orderTypeHint) orderTypeHint.textContent = 'Market orders execute at best available price';
-            }
-            updateCost();
-        }
-
-        if (marketRadio) marketRadio.addEventListener('change', updateOrderTypeUI);
-        if (limitRadio) limitRadio.addEventListener('change', updateOrderTypeUI);
-
-        // Initial state
-        updateOrderTypeUI();
-    }
-
     // Calculate order cost dynamically
-    function initOrderCostCalculator() {
+    function updateCost() {
         const priceInput = document.getElementById('price_input');
-        const quantityInput = document.querySelector('input[name="quantity"]');
+        const quantityInput = document.getElementById('quantity_input');
         const costDisplay = document.getElementById('order_cost');
-        const typeYes = document.getElementById('type_yes');
-        const typeNo = document.getElementById('type_no');
-        const marketRadio = document.getElementById('type_market');
 
-        window.updateCost = function() {
-            if (quantityInput && costDisplay) {
-                const quantity = parseInt(quantityInput.value) || 0;
-                let price;
+        if (priceInput && quantityInput && costDisplay) {
+            const price = parseInt(priceInput.value) || 0;
+            const quantity = parseInt(quantityInput.value) || 0;
+            const cost = (price * quantity / 100).toFixed(2);
+            costDisplay.innerHTML = 'Max Cost: <strong>$' + cost + '</strong>';
+        }
+    }
 
-                // For market orders, use current best price
-                if (marketRadio && marketRadio.checked) {
-                    if (typeYes && typeYes.checked) {
-                        price = currentYesPrice;
-                    } else {
-                        price = currentNoPrice;
-                    }
-                } else {
-                    // For limit orders, use input price
-                    price = parseInt(priceInput.value) || 0;
-                }
-
-                const cost = (price * quantity / 100).toFixed(2);
-                costDisplay.innerHTML = 'Max Cost: <strong>$' + cost + '</strong>';
-            }
-        };
+    // Initialize
+    document.addEventListener('DOMContentLoaded', function() {
+        const priceInput = document.getElementById('price_input');
+        const quantityInput = document.getElementById('quantity_input');
 
         if (priceInput) priceInput.addEventListener('input', updateCost);
         if (quantityInput) quantityInput.addEventListener('input', updateCost);
-        if (typeYes) typeYes.addEventListener('change', updateCost);
-        if (typeNo) typeNo.addEventListener('change', updateCost);
+
         updateCost();
-    }
-
-    // Update prices in the form when market data changes
-    function updateFormPrices(data) {
-        if (data.best_yes_ask !== undefined || data.last_yes_price !== undefined) {
-            currentYesPrice = data.best_yes_ask || data.last_yes_price;
-            const yesSpan = document.getElementById('yes_price');
-            if (yesSpan) yesSpan.textContent = currentYesPrice;
-        }
-        if (data.best_no_ask !== undefined || data.last_no_price !== undefined) {
-            currentNoPrice = data.best_no_ask || data.last_no_price;
-            const noSpan = document.getElementById('no_price');
-            if (noSpan) noSpan.textContent = currentNoPrice;
-        }
-        // Update cost display
-        if (typeof updateCost === 'function') updateCost();
-    }
-
-    // Heartbeat to keep connection alive
-    function startHeartbeat() {
-        setInterval(function() {
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ type: 'ping' }));
-            }
-        }, 30000);
-    }
-
-    // AMM Quote fetching
-    let quoteTimeout = null;
-    let lastQuote = null;
-
-    function fetchAMMQuote() {
-        if (!AMM_ENABLED) return;
-
-        const sideEl = document.querySelector('input[name="side"]:checked');
-        const contractTypeEl = document.querySelector('input[name="contract_type"]:checked');
-        const quantityEl = document.querySelector('input[name="quantity"]');
-        const orderTypeEl = document.querySelector('input[name="order_type"]:checked');
-
-        if (!sideEl || !contractTypeEl || !quantityEl) return;
-
-        // Only fetch quote for market orders
-        if (orderTypeEl && orderTypeEl.value !== 'market') {
-            // For limit orders, use simple cost calculation
-            const price = parseInt(document.getElementById('price_input').value) || 50;
-            const quantity = parseInt(quantityEl.value) || 0;
-            const cost = (price * quantity / 100).toFixed(2);
-
-            const quoteCost = document.getElementById('quote-cost');
-            const quoteAvg = document.getElementById('quote-avg-price');
-            const quoteImpact = document.getElementById('quote-impact');
-
-            if (quoteCost) quoteCost.textContent = '$' + cost;
-            if (quoteAvg) quoteAvg.textContent = price + 'c';
-            if (quoteImpact) {
-                quoteImpact.textContent = '0c';
-                quoteImpact.className = 'text-muted';
-            }
-            return;
-        }
-
-        const side = sideEl.value;
-        const contractType = contractTypeEl.value;
-        const quantity = parseInt(quantityEl.value) || 0;
-
-        if (quantity <= 0) return;
-
-        // Debounce API calls
-        clearTimeout(quoteTimeout);
-        quoteTimeout = setTimeout(function() {
-            const url = QUOTE_URL + '?side=' + side + '&contract_type=' + contractType + '&quantity=' + quantity;
-
-            fetch(url)
-                .then(function(response) { return response.json(); })
-                .then(function(data) {
-                    if (data.error) {
-                        console.error('Quote error:', data.error);
-                        return;
-                    }
-                    lastQuote = data.quote;
-                    updateQuoteDisplay(data.quote, data.current_prices);
-                })
-                .catch(function(error) {
-                    console.error('Error fetching quote:', error);
-                });
-        }, 300);
-    }
-
-    function updateQuoteDisplay(quote, prices) {
-        const quoteCost = document.getElementById('quote-cost');
-        const quoteAvg = document.getElementById('quote-avg-price');
-        const quoteImpact = document.getElementById('quote-impact');
-        const submitText = document.getElementById('submit-text');
-
-        if (quoteCost) {
-            quoteCost.textContent = '$' + quote.total.toFixed(2);
-        }
-
-        if (quoteAvg) {
-            quoteAvg.textContent = quote.avg_price.toFixed(1) + 'c';
-        }
-
-        if (quoteImpact) {
-            const impact = quote.price_impact;
-            if (impact > 0) {
-                quoteImpact.textContent = '+' + impact + 'c';
-                quoteImpact.className = 'text-danger';
-            } else if (impact < 0) {
-                quoteImpact.textContent = impact + 'c';
-                quoteImpact.className = 'text-success';
-            } else {
-                quoteImpact.textContent = '0c';
-                quoteImpact.className = 'text-muted';
-            }
-        }
-
-        if (submitText) {
-            const side = quote.side.charAt(0).toUpperCase() + quote.side.slice(1);
-            submitText.textContent = side + ' ' + quote.quantity + ' ' + quote.contract_type.toUpperCase() + ' for $' + quote.total.toFixed(2);
-        }
-
-        // Update main price display
-        const yesPrice = document.getElementById('amm-yes-price');
-        const noPrice = document.getElementById('amm-no-price');
-        if (yesPrice && prices) yesPrice.textContent = prices.yes + 'c';
-        if (noPrice && prices) noPrice.textContent = prices.no + 'c';
-    }
-
-    function initAMMQuotes() {
-        if (!AMM_ENABLED) return;
-
-        const sideInputs = document.querySelectorAll('input[name="side"]');
-        const contractInputs = document.querySelectorAll('input[name="contract_type"]');
-        const quantityInput = document.querySelector('input[name="quantity"]');
-        const orderTypeInputs = document.querySelectorAll('input[name="order_type"]');
-
-        sideInputs.forEach(function(input) {
-            input.addEventListener('change', fetchAMMQuote);
-        });
-        contractInputs.forEach(function(input) {
-            input.addEventListener('change', fetchAMMQuote);
-        });
-        orderTypeInputs.forEach(function(input) {
-            input.addEventListener('change', fetchAMMQuote);
-        });
-        if (quantityInput) {
-            quantityInput.addEventListener('input', fetchAMMQuote);
-        }
-
-        // Initial quote fetch
-        fetchAMMQuote();
-    }
-
-    // Periodically refresh AMM prices
-    function startPriceRefresh() {
-        if (!AMM_ENABLED) return;
-
-        setInterval(function() {
-            fetch(PRICES_URL)
-                .then(function(response) { return response.json(); })
-                .then(function(data) {
-                    if (data.error) return;
-
-                    const yesPrice = document.getElementById('amm-yes-price');
-                    const noPrice = document.getElementById('amm-no-price');
-
-                    if (yesPrice) {
-                        const oldVal = yesPrice.textContent;
-                        const newVal = data.yes_price + 'c';
-                        if (oldVal !== newVal) {
-                            yesPrice.textContent = newVal;
-                            flashElement(yesPrice);
-                        }
-                    }
-                    if (noPrice) {
-                        const oldVal = noPrice.textContent;
-                        const newVal = data.no_price + 'c';
-                        if (oldVal !== newVal) {
-                            noPrice.textContent = newVal;
-                            flashElement(noPrice);
-                        }
-                    }
-                })
-                .catch(function(error) {
-                    console.error('Error fetching prices:', error);
-                });
-        }, 5000);  // Refresh every 5 seconds
-    }
-
-    // Initialize on DOM ready
-    document.addEventListener('DOMContentLoaded', function() {
-        initOrderTypeToggle();
-        initOrderCostCalculator();
-        initAMMQuotes();
-        connect();
-        startHeartbeat();
-        startPriceRefresh();
-    });
-
-    // Cleanup on page unload
-    window.addEventListener('beforeunload', function() {
-        if (ws) {
-            ws.close();
-        }
     });
 })();
 </script>
