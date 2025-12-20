@@ -12,6 +12,7 @@ urlpatterns = [
 
     # Trading actions (require login)
     path('markets/<int:pk>/order/', views.place_order, name='place_order'),
+    path('markets/<int:pk>/quick-bet/', views.place_quick_bet, name='place_quick_bet'),
     path('orders/<int:pk>/cancel/', views.cancel_order, name='cancel_order'),
 
     # Mint/Redeem complete sets (require login)

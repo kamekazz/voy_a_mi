@@ -6,7 +6,7 @@ from django.http import JsonResponse
 from django.views.decorators.http import require_POST
 from django.db.models import Sum, Q
 from django.utils import timezone
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from .models import User, Category, Event, Market, Order, Trade, Position, Transaction
 from .forms import UserRegistrationForm
@@ -198,6 +198,97 @@ def place_order(request, pk):
     except InsufficientFundsError as e:
         messages.error(request, str(e))
     except InsufficientPositionError as e:
+        messages.error(request, str(e))
+    except MarketNotActiveError as e:
+        messages.error(request, str(e))
+    except TradingError as e:
+        messages.error(request, f"Trading error: {e}")
+
+    return redirect('predictions:market_detail', pk=pk)
+
+
+@login_required
+@require_POST
+def place_quick_bet(request, pk):
+    """Place a quick bet (market order) - simplified interface.
+
+    User specifies dollar amount and contract type (YES/NO).
+    System determines price from best ask or last traded price.
+    """
+    market = get_object_or_404(Market, pk=pk)
+
+    # Parse parameters
+    contract_type = request.POST.get('contract_type')
+
+    try:
+        amount = Decimal(request.POST.get('amount', '0'))
+    except (ValueError, TypeError, InvalidOperation):
+        messages.error(request, "Invalid amount.")
+        return redirect('predictions:market_detail', pk=pk)
+
+    # Validate contract type
+    if contract_type not in ['yes', 'no']:
+        messages.error(request, "Please select YES or NO.")
+        return redirect('predictions:market_detail', pk=pk)
+
+    # Validate amount
+    if amount <= 0:
+        messages.error(request, "Amount must be greater than $0.")
+        return redirect('predictions:market_detail', pk=pk)
+
+    if amount > request.user.available_balance:
+        messages.error(request, f"Insufficient balance. You have ${request.user.available_balance:.2f} available.")
+        return redirect('predictions:market_detail', pk=pk)
+
+    # Determine market price (Polymarket-style priority)
+    # 1. Best ask (lowest sell order)
+    # 2. Last traded price
+    # 3. Default to 50 cents
+    if contract_type == 'yes':
+        price = market.best_yes_ask or market.last_yes_price or 50
+    else:
+        price = market.best_no_ask or market.last_no_price or 50
+
+    # Calculate quantity from amount
+    # amount = quantity * price / 100
+    # quantity = amount * 100 / price
+    quantity = int((amount * 100) / price)
+
+    if quantity < 1:
+        messages.error(request, f"Amount too small. Minimum bet at {price}c is ${price/100:.2f}.")
+        return redirect('predictions:market_detail', pk=pk)
+
+    try:
+        # Place as market order
+        engine = MatchingEngine(market)
+        order, trades = engine.place_order(
+            user=request.user,
+            side='buy',
+            contract_type=contract_type,
+            price=price,
+            quantity=quantity,
+            order_type='market'
+        )
+
+        if trades:
+            total_filled = sum(t.quantity for t in trades)
+            avg_price = sum(t.price * t.quantity for t in trades) / total_filled if total_filled else price
+            actual_cost = sum(t.price * t.quantity / 100 for t in trades)
+            messages.success(
+                request,
+                f"Bet placed! Bought {total_filled} {contract_type.upper()} shares "
+                f"at avg {avg_price:.0f}c for ${actual_cost:.2f}. "
+                f"Potential payout: ${total_filled:.2f}"
+            )
+        else:
+            # Order went to orderbook (no immediate fill)
+            messages.success(
+                request,
+                f"Order placed: {quantity} {contract_type.upper()} @ {price}c. "
+                f"Waiting for a seller to match."
+            )
+
+    except InsufficientFundsError as e:
         messages.error(request, str(e))
     except MarketNotActiveError as e:
         messages.error(request, str(e))

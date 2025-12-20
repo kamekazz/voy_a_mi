@@ -68,69 +68,145 @@
         <!-- Trading Interface -->
         {% if market.is_trading_active %}
         <div class="card mb-4">
-            <div class="card-header">
-                <h5 class="mb-0"><i class="bi bi-lightning"></i> Place Limit Order</h5>
+            <div class="card-header p-0">
+                <!-- Trading Mode Tabs -->
+                <ul class="nav nav-tabs card-header-tabs" id="tradingTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="quick-bet-tab" data-bs-toggle="tab"
+                                data-bs-target="#quick-bet" type="button" role="tab">
+                            <i class="bi bi-lightning-charge"></i> Quick Bet
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="limit-order-tab" data-bs-toggle="tab"
+                                data-bs-target="#limit-order" type="button" role="tab">
+                            <i class="bi bi-sliders"></i> Limit Order
+                        </button>
+                    </li>
+                </ul>
             </div>
             <div class="card-body">
                 {% if user.is_authenticated %}
-                <form method="post" action="{% url 'predictions:place_order' market.pk %}" id="order-form">
-                    {% csrf_token %}
+                <div class="tab-content" id="tradingTabContent">
+                    <!-- Quick Bet Tab (Default) -->
+                    <div class="tab-pane fade show active" id="quick-bet" role="tabpanel">
+                        <form method="post" action="{% url 'predictions:place_quick_bet' market.pk %}" id="quick-bet-form">
+                            {% csrf_token %}
 
-                    <!-- Order Side -->
-                    <div class="mb-3">
-                        <label class="form-label">Action</label>
-                        <div class="btn-group w-100" role="group">
-                            <input type="radio" class="btn-check" name="side" id="side_buy" value="buy" checked>
-                            <label class="btn btn-outline-success" for="side_buy">Buy</label>
+                            <!-- Contract Type - Big Toggle -->
+                            <div class="mb-4">
+                                <label class="form-label">Bet on</label>
+                                <div class="btn-group w-100" role="group">
+                                    <input type="radio" class="btn-check" name="contract_type" id="quick_type_yes" value="yes" checked>
+                                    <label class="btn btn-outline-success btn-lg" for="quick_type_yes">
+                                        <i class="bi bi-check-circle"></i> YES
+                                    </label>
 
-                            <input type="radio" class="btn-check" name="side" id="side_sell" value="sell">
-                            <label class="btn btn-outline-danger" for="side_sell">Sell</label>
-                        </div>
+                                    <input type="radio" class="btn-check" name="contract_type" id="quick_type_no" value="no">
+                                    <label class="btn btn-outline-danger btn-lg" for="quick_type_no">
+                                        <i class="bi bi-x-circle"></i> NO
+                                    </label>
+                                </div>
+                            </div>
+
+                            <!-- Amount Input -->
+                            <div class="mb-3">
+                                <label class="form-label">Amount to bet</label>
+                                <div class="input-group input-group-lg">
+                                    <span class="input-group-text">$</span>
+                                    <input type="number" class="form-control" name="amount" id="quick_amount"
+                                           min="0.01" step="0.01" value="5.00" required>
+                                </div>
+                                <small class="text-muted">
+                                    Balance: <strong>${{ user.available_balance|floatformat:2 }}</strong>
+                                </small>
+                            </div>
+
+                            <!-- Estimate Display -->
+                            <div class="bg-light rounded p-3 mb-3" id="quick-bet-estimate">
+                                <div class="d-flex justify-content-between mb-2">
+                                    <span class="text-muted">Shares:</span>
+                                    <span id="estimate-shares">~<strong>10</strong> shares</span>
+                                </div>
+                                <div class="d-flex justify-content-between mb-2">
+                                    <span class="text-muted">Price:</span>
+                                    <span id="estimate-price"><strong>50</strong>c each</span>
+                                </div>
+                                <hr class="my-2">
+                                <div class="d-flex justify-content-between">
+                                    <span class="text-muted">Payout if correct:</span>
+                                    <span class="text-success" id="estimate-payout"><strong>$10.00</strong></span>
+                                </div>
+                            </div>
+
+                            <button type="submit" class="btn btn-success btn-lg w-100" id="quick-bet-button">
+                                <i class="bi bi-lightning-charge"></i> Bet $5.00 on YES
+                            </button>
+                        </form>
                     </div>
 
-                    <!-- Contract Type -->
-                    <div class="mb-3">
-                        <label class="form-label">Contract</label>
-                        <div class="btn-group w-100" role="group">
-                            <input type="radio" class="btn-check" name="contract_type" id="type_yes" value="yes" checked>
-                            <label class="btn btn-outline-success" for="type_yes">YES</label>
+                    <!-- Limit Order Tab (Advanced) -->
+                    <div class="tab-pane fade" id="limit-order" role="tabpanel">
+                        <form method="post" action="{% url 'predictions:place_order' market.pk %}" id="order-form">
+                            {% csrf_token %}
 
-                            <input type="radio" class="btn-check" name="contract_type" id="type_no" value="no">
-                            <label class="btn btn-outline-danger" for="type_no">NO</label>
-                        </div>
+                            <!-- Order Side -->
+                            <div class="mb-3">
+                                <label class="form-label">Action</label>
+                                <div class="btn-group w-100" role="group">
+                                    <input type="radio" class="btn-check" name="side" id="side_buy" value="buy" checked>
+                                    <label class="btn btn-outline-success" for="side_buy">Buy</label>
+
+                                    <input type="radio" class="btn-check" name="side" id="side_sell" value="sell">
+                                    <label class="btn btn-outline-danger" for="side_sell">Sell</label>
+                                </div>
+                            </div>
+
+                            <!-- Contract Type -->
+                            <div class="mb-3">
+                                <label class="form-label">Contract</label>
+                                <div class="btn-group w-100" role="group">
+                                    <input type="radio" class="btn-check" name="contract_type" id="type_yes" value="yes" checked>
+                                    <label class="btn btn-outline-success" for="type_yes">YES</label>
+
+                                    <input type="radio" class="btn-check" name="contract_type" id="type_no" value="no">
+                                    <label class="btn btn-outline-danger" for="type_no">NO</label>
+                                </div>
+                            </div>
+
+                            <!-- Price -->
+                            <div class="mb-3">
+                                <label class="form-label">Price (1-99c)</label>
+                                <div class="input-group">
+                                    <input type="number" class="form-control" name="price" id="price_input"
+                                           min="1" max="99" value="50" required>
+                                    <span class="input-group-text">c</span>
+                                </div>
+                                <small class="text-muted">Each contract pays $1 if correct, $0 if wrong</small>
+                            </div>
+
+                            <!-- Quantity -->
+                            <div class="mb-3">
+                                <label class="form-label">Quantity</label>
+                                <input type="number" class="form-control" name="quantity" id="quantity_input"
+                                       min="1" value="10" required>
+                            </div>
+
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <span class="text-muted">
+                                    Balance: <strong>${{ user.available_balance|floatformat:2 }}</strong>
+                                </span>
+                                <span class="text-muted" id="order_cost">
+                                    Max Cost: <strong>$5.00</strong>
+                                </span>
+                            </div>
+
+                            <button type="submit" class="btn btn-primary btn-lg w-100">
+                                <i class="bi bi-check-circle"></i> Place Order
+                            </button>
+                        </form>
                     </div>
-
-                    <!-- Price -->
-                    <div class="mb-3">
-                        <label class="form-label">Price (1-99c)</label>
-                        <div class="input-group">
-                            <input type="number" class="form-control" name="price" id="price_input"
-                                   min="1" max="99" value="50" required>
-                            <span class="input-group-text">c</span>
-                        </div>
-                        <small class="text-muted">Each contract pays $1 if correct, $0 if wrong</small>
-                    </div>
-
-                    <!-- Quantity -->
-                    <div class="mb-3">
-                        <label class="form-label">Quantity</label>
-                        <input type="number" class="form-control" name="quantity" id="quantity_input"
-                               min="1" value="10" required>
-                    </div>
-
-                    <div class="d-flex justify-content-between align-items-center mb-3">
-                        <span class="text-muted">
-                            Balance: <strong>${{ user.available_balance|floatformat:2 }}</strong>
-                        </span>
-                        <span class="text-muted" id="order_cost">
-                            Max Cost: <strong>$5.00</strong>
-                        </span>
-                    </div>
-
-                    <button type="submit" class="btn btn-primary btn-lg w-100">
-                        <i class="bi bi-check-circle"></i> Place Order
-                    </button>
-                </form>
+                </div>
                 {% else %}
                 <div class="text-center py-4">
                     <p class="mb-3">You need to be logged in to trade.</p>
@@ -393,7 +469,53 @@
 (function() {
     'use strict';
 
-    // Calculate order cost dynamically
+    // Market price data from Django
+    const marketPrices = {
+        yesAsk: {{ market.best_yes_ask|default:"null" }},
+        noAsk: {{ market.best_no_ask|default:"null" }},
+        lastYes: {{ market.last_yes_price|default:50 }},
+        lastNo: {{ market.last_no_price|default:50 }}
+    };
+
+    // Get market price for a contract type (Polymarket-style priority)
+    function getMarketPrice(contractType) {
+        if (contractType === 'yes') {
+            return marketPrices.yesAsk || marketPrices.lastYes || 50;
+        } else {
+            return marketPrices.noAsk || marketPrices.lastNo || 50;
+        }
+    }
+
+    // Update Quick Bet estimates
+    function updateQuickBetEstimate() {
+        const amountInput = document.getElementById('quick_amount');
+        const yesRadio = document.getElementById('quick_type_yes');
+        const sharesDisplay = document.getElementById('estimate-shares');
+        const priceDisplay = document.getElementById('estimate-price');
+        const payoutDisplay = document.getElementById('estimate-payout');
+        const betButton = document.getElementById('quick-bet-button');
+
+        if (!amountInput) return;
+
+        const amount = parseFloat(amountInput.value) || 0;
+        const contractType = yesRadio.checked ? 'yes' : 'no';
+        const price = getMarketPrice(contractType);
+        const shares = Math.floor(amount * 100 / price);
+        const payout = shares; // Each share pays $1 if correct
+
+        // Update displays
+        sharesDisplay.innerHTML = '~<strong>' + shares + '</strong> shares';
+        priceDisplay.innerHTML = '<strong>' + price + '</strong>c each';
+        payoutDisplay.innerHTML = '<strong>$' + payout.toFixed(2) + '</strong>';
+
+        // Update button text
+        const contractLabel = contractType.toUpperCase();
+        const buttonClass = contractType === 'yes' ? 'btn-success' : 'btn-danger';
+        betButton.innerHTML = '<i class="bi bi-lightning-charge"></i> Bet $' + amount.toFixed(2) + ' on ' + contractLabel;
+        betButton.className = 'btn ' + buttonClass + ' btn-lg w-100';
+    }
+
+    // Calculate order cost dynamically (Limit Order tab)
     function updateCost() {
         const priceInput = document.getElementById('price_input');
         const quantityInput = document.getElementById('quantity_input');
@@ -409,13 +531,31 @@
 
     // Initialize
     document.addEventListener('DOMContentLoaded', function() {
+        // Limit Order tab listeners
         const priceInput = document.getElementById('price_input');
         const quantityInput = document.getElementById('quantity_input');
 
         if (priceInput) priceInput.addEventListener('input', updateCost);
         if (quantityInput) quantityInput.addEventListener('input', updateCost);
-
         updateCost();
+
+        // Quick Bet tab listeners
+        const quickAmount = document.getElementById('quick_amount');
+        const quickYes = document.getElementById('quick_type_yes');
+        const quickNo = document.getElementById('quick_type_no');
+
+        if (quickAmount) {
+            quickAmount.addEventListener('input', updateQuickBetEstimate);
+        }
+        if (quickYes) {
+            quickYes.addEventListener('change', updateQuickBetEstimate);
+        }
+        if (quickNo) {
+            quickNo.addEventListener('change', updateQuickBetEstimate);
+        }
+
+        // Initialize Quick Bet estimate
+        updateQuickBetEstimate();
     });
 })();
 </script>
