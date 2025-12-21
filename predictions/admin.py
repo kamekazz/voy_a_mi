@@ -1,8 +1,29 @@
 from django.contrib import admin
+from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.utils.html import format_html
 from django.urls import reverse
 from django.utils import timezone
-from .models import Category, Event, Market, Order, Trade, Position, Transaction
+from .models import User, Category, Event, Market, Order, Trade, Position, Transaction
+
+
+@admin.register(User)
+class UserAdmin(BaseUserAdmin):
+    list_display = ['username', 'email', 'first_name', 'last_name', 'balance_display', 'reserved_balance', 'is_staff']
+    list_filter = BaseUserAdmin.list_filter + ('is_active',)
+    search_fields = ['username', 'email', 'first_name', 'last_name']
+    ordering = ['username']
+
+    fieldsets = BaseUserAdmin.fieldsets + (
+        ('Trading Balance', {
+            'fields': ('balance', 'reserved_balance'),
+            'description': 'User trading balance. Edit "balance" to add/remove funds.'
+        }),
+    )
+
+    def balance_display(self, obj):
+        return f'${obj.balance:.2f}'
+    balance_display.short_description = 'Balance'
+    balance_display.admin_order_field = 'balance'
 
 
 @admin.register(Category)
@@ -246,7 +267,7 @@ class OrderAdmin(admin.ModelAdmin):
     )
 
     def user_link(self, obj):
-        url = reverse('admin:auctions_user_change', args=[obj.user.pk])
+        url = reverse('admin:predictions_user_change', args=[obj.user.pk])
         return format_html('<a href="{}">{}</a>', url, obj.user.username)
     user_link.short_description = 'User'
 
@@ -288,12 +309,12 @@ class TradeAdmin(admin.ModelAdmin):
     market_link.short_description = 'Market'
 
     def buyer_link(self, obj):
-        url = reverse('admin:auctions_user_change', args=[obj.buyer.pk])
+        url = reverse('admin:predictions_user_change', args=[obj.buyer.pk])
         return format_html('<a href="{}">{}</a>', url, obj.buyer.username)
     buyer_link.short_description = 'Buyer'
 
     def seller_link(self, obj):
-        url = reverse('admin:auctions_user_change', args=[obj.seller.pk])
+        url = reverse('admin:predictions_user_change', args=[obj.seller.pk])
         return format_html('<a href="{}">{}</a>', url, obj.seller.username)
     seller_link.short_description = 'Seller'
 
@@ -320,7 +341,7 @@ class PositionAdmin(admin.ModelAdmin):
     readonly_fields = ['created_at', 'updated_at']
 
     def user_link(self, obj):
-        url = reverse('admin:auctions_user_change', args=[obj.user.pk])
+        url = reverse('admin:predictions_user_change', args=[obj.user.pk])
         return format_html('<a href="{}">{}</a>', url, obj.user.username)
     user_link.short_description = 'User'
 
@@ -352,7 +373,7 @@ class TransactionAdmin(admin.ModelAdmin):
     date_hierarchy = 'created_at'
 
     def user_link(self, obj):
-        url = reverse('admin:auctions_user_change', args=[obj.user.pk])
+        url = reverse('admin:predictions_user_change', args=[obj.user.pk])
         return format_html('<a href="{}">{}</a>', url, obj.user.username)
     user_link.short_description = 'User'
 
