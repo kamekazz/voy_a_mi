@@ -1,0 +1,17 @@
+[Unit]
+Description=Voy A Mi Prediction Market Django Application
+After=network.target
+
+[Service]
+User=kamekazz
+Group=kamekazz
+WorkingDirectory=/home/kamekazz/voy_a_mi
+ExecStart=/home/kamekazz/voy_a_mi/venv/bin/daphne -b 0.0.0.0 -p 8000 market_project.asgi:application
+Restart=always
+RestartSec=3
+
+# Environment
+Environment="PATH=/home/kamekazz/voy_a_mi/venv/bin"
+
+[Install]
+WantedBy=multi-user.target
