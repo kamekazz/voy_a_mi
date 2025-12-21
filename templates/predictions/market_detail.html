@@ -34,22 +34,25 @@
                 <p class="mt-3">{{ market.description }}</p>
                 {% endif %}
 
-                <!-- Current Prices -->
+                <!-- Current Prices (AMM-powered) -->
                 <div class="row text-center mt-4">
                     <div class="col-6">
                         <div class="p-3 bg-success bg-opacity-10 rounded" id="yes-card">
                             <small class="text-muted d-block">YES</small>
-                            <span class="price-display yes-color" id="yes-price">{{ market.last_yes_price }}c</span>
-                            <small class="text-muted d-block"><span id="yes-implied">{{ market.last_yes_price }}</span>% implied</small>
+                            <span class="price-display yes-color fs-3" id="yes-price">{{ amm_prices.yes_price }}c</span>
+                            <small class="text-muted d-block"><span id="yes-implied">{{ amm_prices.yes_price }}</span>% chance</small>
                         </div>
                     </div>
                     <div class="col-6">
                         <div class="p-3 bg-danger bg-opacity-10 rounded" id="no-card">
                             <small class="text-muted d-block">NO</small>
-                            <span class="price-display no-color" id="no-price">{{ market.last_no_price }}c</span>
-                            <small class="text-muted d-block"><span id="no-implied">{{ market.last_no_price }}</span>% implied</small>
+                            <span class="price-display no-color fs-3" id="no-price">{{ amm_prices.no_price }}c</span>
+                            <small class="text-muted d-block"><span id="no-implied">{{ amm_prices.no_price }}</span>% chance</small>
                         </div>
                     </div>
+                </div>
+                <div class="text-center mt-2">
+                    <small class="text-muted"><i class="bi bi-lightning-charge"></i> AMM-powered instant trading</small>
                 </div>
 
                 <div class="row mt-3 text-center text-muted small">
@@ -63,6 +66,26 @@
                         {% if market.spread %}
                         <i class="bi bi-arrows-expand"></i> {{ market.spread }}c spread
                         {% endif %}
+                    </div>
+                </div>
+
+                <!-- Price Chart -->
+                <div class="mt-4">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6 class="mb-0"><i class="bi bi-graph-up-arrow"></i> Price History</h6>
+                        <div class="btn-group btn-group-sm" role="group">
+                            <button type="button" class="btn btn-outline-secondary active" data-timeframe="1h">1H</button>
+                            <button type="button" class="btn btn-outline-secondary" data-timeframe="24h">24H</button>
+                            <button type="button" class="btn btn-outline-secondary" data-timeframe="7d">7D</button>
+                            <button type="button" class="btn btn-outline-secondary" data-timeframe="all">All</button>
+                        </div>
+                    </div>
+                    <div style="height: 200px; position: relative;">
+                        <canvas id="priceChart"></canvas>
+                        <div id="chartLoading" class="position-absolute top-50 start-50 translate-middle text-muted">
+                            <div class="spinner-border spinner-border-sm" role="status"></div>
+                            Loading chart...
+                        </div>
                     </div>
                 </div>
             </div>
@@ -95,10 +118,26 @@
                     <div class="tab-pane fade show active" id="quick-bet" role="tabpanel">
                         <form method="post" action="{% url 'predictions:place_quick_bet' market.pk %}" id="quick-bet-form">
                             {% csrf_token %}
+                            <input type="hidden" name="action" id="quick_action" value="buy">
+
+                            <!-- Buy/Sell Toggle -->
+                            <div class="mb-3">
+                                <div class="btn-group w-100" role="group">
+                                    <input type="radio" class="btn-check" name="side_toggle" id="quick_buy" value="buy" checked>
+                                    <label class="btn btn-outline-success" for="quick_buy">
+                                        <i class="bi bi-cart-plus"></i> Buy
+                                    </label>
+
+                                    <input type="radio" class="btn-check" name="side_toggle" id="quick_sell" value="sell">
+                                    <label class="btn btn-outline-danger" for="quick_sell">
+                                        <i class="bi bi-cart-dash"></i> Sell
+                                    </label>
+                                </div>
+                            </div>
 
                             <!-- Contract Type - Big Toggle -->
                             <div class="mb-4">
-                                <label class="form-label">Bet on</label>
+                                <label class="form-label" id="contract-label">Bet on</label>
                                 <div class="btn-group w-100" role="group">
                                     <input type="radio" class="btn-check" name="contract_type" id="quick_type_yes" value="yes" checked>
                                     <label class="btn btn-outline-success btn-lg" for="quick_type_yes">
@@ -112,23 +151,32 @@
                                 </div>
                             </div>
 
-                            <!-- Amount Input -->
-                            <div class="mb-3">
-                                <label class="form-label">Amount to bet</label>
+                            <!-- Amount/Quantity Input -->
+                            <div class="mb-3" id="amount-input-group">
+                                <label class="form-label" id="amount-label">Amount to bet</label>
                                 <div class="input-group input-group-lg">
-                                    <span class="input-group-text">$</span>
+                                    <span class="input-group-text" id="amount-prefix">$</span>
                                     <input type="number" class="form-control" name="amount" id="quick_amount"
                                            min="0.01" step="0.01" value="5.00" required>
+                                    <span class="input-group-text d-none" id="shares-suffix">shares</span>
                                 </div>
-                                <small class="text-muted">
+                                <small class="text-muted" id="balance-info">
                                     Balance: <strong>${{ user.available_balance|floatformat:2 }}</strong>
+                                </small>
+                                <small class="text-muted d-none" id="position-info">
+                                    {% if user_position %}
+                                    You own: <strong><span id="yes-position">{{ user_position.yes_quantity }}</span> YES</strong>,
+                                    <strong><span id="no-position">{{ user_position.no_quantity }}</span> NO</strong>
+                                    {% else %}
+                                    You own: <strong>0 YES</strong>, <strong>0 NO</strong>
+                                    {% endif %}
                                 </small>
                             </div>
 
                             <!-- Estimate Display -->
                             <div class="bg-light rounded p-3 mb-3" id="quick-bet-estimate">
                                 <div class="d-flex justify-content-between mb-2">
-                                    <span class="text-muted">Shares:</span>
+                                    <span class="text-muted" id="estimate-shares-label">Shares:</span>
                                     <span id="estimate-shares">~<strong>10</strong> shares</span>
                                 </div>
                                 <div class="d-flex justify-content-between mb-2">
@@ -137,7 +185,7 @@
                                 </div>
                                 <hr class="my-2">
                                 <div class="d-flex justify-content-between">
-                                    <span class="text-muted">Payout if correct:</span>
+                                    <span class="text-muted" id="estimate-result-label">Payout if correct:</span>
                                     <span class="text-success" id="estimate-payout"><strong>$10.00</strong></span>
                                 </div>
                             </div>
@@ -314,39 +362,57 @@
             </div>
         </div>
 
-        <!-- Recent Trades -->
+        <!-- Recent Trades (AMM) -->
         <div class="card">
-            <div class="card-header">
+            <div class="card-header d-flex justify-content-between align-items-center">
                 <h5 class="mb-0"><i class="bi bi-clock-history"></i> Recent Trades</h5>
+                <small class="text-muted"><i class="bi bi-lightning-charge"></i> AMM</small>
             </div>
-            <div class="card-body">
-                {% if recent_trades %}
-                <table class="table table-sm table-hover">
+            <div class="card-body p-0">
+                {% if amm_trades %}
+                <table class="table table-sm table-hover mb-0">
                     <thead>
                         <tr class="small text-muted">
-                            <th>Time</th>
+                            <th class="ps-3">Time</th>
+                            <th>Action</th>
                             <th>Type</th>
-                            <th>Price</th>
-                            <th class="text-end">Qty</th>
+                            <th>Avg Price</th>
+                            <th class="text-end pe-3">Qty</th>
                         </tr>
                     </thead>
                     <tbody id="trades-tbody">
-                        {% for trade in recent_trades %}
+                        {% for trade in amm_trades %}
                         <tr class="orderbook-row">
-                            <td>{{ trade.executed_at|date:"H:i:s" }}</td>
+                            <td class="ps-3">{{ trade.executed_at|date:"H:i:s" }}</td>
                             <td>
-                                <span class="badge {% if trade.contract_type == 'yes' %}bg-success{% else %}bg-danger{% endif %}">
+                                <span class="badge {% if trade.side == 'buy' %}bg-success{% else %}bg-warning text-dark{% endif %}">
+                                    {{ trade.side|upper }}
+                                </span>
+                            </td>
+                            <td>
+                                <span class="{% if trade.contract_type == 'yes' %}yes-color{% else %}no-color{% endif %} fw-bold">
                                     {{ trade.contract_type|upper }}
                                 </span>
                             </td>
-                            <td>{{ trade.price }}c</td>
-                            <td class="text-end">{{ trade.quantity }}</td>
+                            <td>
+                                {{ trade.avg_price|floatformat:1 }}c
+                                {% if trade.price_before != trade.price_after %}
+                                <small class="text-muted">
+                                    {% if trade.price_after > trade.price_before %}
+                                    <i class="bi bi-arrow-up text-success"></i>
+                                    {% else %}
+                                    <i class="bi bi-arrow-down text-danger"></i>
+                                    {% endif %}
+                                </small>
+                                {% endif %}
+                            </td>
+                            <td class="text-end pe-3">{{ trade.quantity }}</td>
                         </tr>
                         {% endfor %}
                     </tbody>
                 </table>
                 {% else %}
-                <p class="text-muted text-center mb-0">No trades yet</p>
+                <p class="text-muted text-center py-3 mb-0">No trades yet</p>
                 {% endif %}
             </div>
         </div>
@@ -505,6 +571,9 @@
 {% endblock %}
 
 {% block extra_js %}
+<!-- Chart.js for price history -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
 <script>
 (function() {
     'use strict';
@@ -512,12 +581,15 @@
     // Market ID for WebSocket connection
     const marketId = {{ market.pk }};
 
-    // Market price data from Django (will be updated by WebSocket)
+    // AMM price data from Django (will be updated by WebSocket)
     const marketPrices = {
+        yesPrice: {{ amm_prices.yes_price|default:50 }},
+        noPrice: {{ amm_prices.no_price|default:50 }},
+        // Keep orderbook data for limit orders
         yesAsk: {{ market.best_yes_ask|default:"null" }},
         noAsk: {{ market.best_no_ask|default:"null" }},
-        lastYes: {{ market.last_yes_price|default:50 }},
-        lastNo: {{ market.last_no_price|default:50 }}
+        yesBid: {{ market.best_yes_bid|default:"null" }},
+        noBid: {{ market.best_no_bid|default:"null" }}
     };
 
     // WebSocket connection
@@ -595,18 +667,27 @@
 
         switch (type) {
             case 'initial_state':
-                // Initial state on connect
+                // Initial state on connect (AMM prices)
                 updatePrices(data.last_yes_price, data.last_no_price, false);
-                if (data.best_yes_ask) marketPrices.yesAsk = data.best_yes_ask;
-                if (data.best_no_ask) marketPrices.noAsk = data.best_no_ask;
+                marketPrices.yesPrice = data.last_yes_price || 50;
+                marketPrices.noPrice = data.last_no_price || 50;
+                marketPrices.yesAsk = data.best_yes_ask || null;
+                marketPrices.noAsk = data.best_no_ask || null;
+                marketPrices.yesBid = data.best_yes_bid || null;
+                marketPrices.noBid = data.best_no_bid || null;
+                updateQuickBetEstimate();
                 console.log('Initial market state received:', data);
                 break;
 
             case 'market_update':
-                // Live price updates
+                // Live AMM price updates
                 updatePrices(data.last_yes_price, data.last_no_price, true);
-                if (data.best_yes_ask) marketPrices.yesAsk = data.best_yes_ask;
-                if (data.best_no_ask) marketPrices.noAsk = data.best_no_ask;
+                marketPrices.yesPrice = data.last_yes_price || marketPrices.yesPrice;
+                marketPrices.noPrice = data.last_no_price || marketPrices.noPrice;
+                marketPrices.yesAsk = data.best_yes_ask || null;
+                marketPrices.noAsk = data.best_no_ask || null;
+                marketPrices.yesBid = data.best_yes_bid || null;
+                marketPrices.noBid = data.best_no_bid || null;
                 updateQuickBetEstimate();
                 console.log('Market update:', data);
                 break;
@@ -670,7 +751,7 @@
         }
     }
 
-    // Add new trade to the trades table
+    // Add new AMM trade to the trades table
     function addTradeToTable(trade) {
         const tbody = document.getElementById('trades-tbody');
         if (!tbody) return;
@@ -681,13 +762,31 @@
 
         const time = new Date(trade.executed_at);
         const timeStr = time.toLocaleTimeString('en-US', { hour12: false });
-        const badgeClass = trade.contract_type === 'yes' ? 'bg-success' : 'bg-danger';
+
+        // Action badge (BUY = green, SELL = yellow)
+        const side = trade.side || 'buy';
+        const actionBadgeClass = side === 'buy' ? 'bg-success' : 'bg-warning text-dark';
+
+        // Contract type color
+        const typeColorClass = trade.contract_type === 'yes' ? 'yes-color' : 'no-color';
+
+        // Price movement arrow
+        const priceBefore = trade.price_before || trade.price;
+        const priceAfter = trade.price_after || trade.price;
+        const avgPrice = trade.avg_price || trade.price;
+        let arrow = '';
+        if (priceAfter > priceBefore) {
+            arrow = '<i class="bi bi-arrow-up text-success"></i>';
+        } else if (priceAfter < priceBefore) {
+            arrow = '<i class="bi bi-arrow-down text-danger"></i>';
+        }
 
         row.innerHTML = `
-            <td>${timeStr}</td>
-            <td><span class="badge ${badgeClass}">${trade.contract_type.toUpperCase()}</span></td>
-            <td>${trade.price}c</td>
-            <td class="text-end">${trade.quantity}</td>
+            <td class="ps-3">${timeStr}</td>
+            <td><span class="badge ${actionBadgeClass}">${side.toUpperCase()}</span></td>
+            <td><span class="${typeColorClass} fw-bold">${trade.contract_type.toUpperCase()}</span></td>
+            <td>${avgPrice}c <small class="text-muted">${arrow}</small></td>
+            <td class="text-end pe-3">${trade.quantity}</td>
         `;
 
         // Insert at top of table
@@ -712,13 +811,67 @@
         }
     }
 
-    // Get market price for a contract type (Polymarket-style priority)
+    // Get AMM market price for a contract type
+    // AMM always has liquidity - price comes directly from the LMSR formula
     function getMarketPrice(contractType) {
         if (contractType === 'yes') {
-            return marketPrices.yesAsk || marketPrices.lastYes || 50;
+            return marketPrices.yesPrice || 50;
         } else {
-            return marketPrices.noAsk || marketPrices.lastNo || 50;
+            return marketPrices.noPrice || 50;
         }
+    }
+
+    // Check if we're in buy or sell mode
+    function isSellMode() {
+        const sellRadio = document.getElementById('quick_sell');
+        return sellRadio && sellRadio.checked;
+    }
+
+    // Update UI for buy/sell mode toggle
+    function updateBuySellMode() {
+        const isSell = isSellMode();
+        const actionInput = document.getElementById('quick_action');
+        const amountLabel = document.getElementById('amount-label');
+        const amountPrefix = document.getElementById('amount-prefix');
+        const sharesSuffix = document.getElementById('shares-suffix');
+        const amountInput = document.getElementById('quick_amount');
+        const balanceInfo = document.getElementById('balance-info');
+        const positionInfo = document.getElementById('position-info');
+        const contractLabel = document.getElementById('contract-label');
+        const sharesLabel = document.getElementById('estimate-shares-label');
+        const resultLabel = document.getElementById('estimate-result-label');
+
+        if (isSell) {
+            // Sell mode: input is number of shares
+            actionInput.value = 'sell';
+            amountLabel.textContent = 'Shares to sell';
+            amountPrefix.classList.add('d-none');
+            sharesSuffix.classList.remove('d-none');
+            amountInput.step = '1';
+            amountInput.min = '1';
+            amountInput.value = '10';
+            balanceInfo.classList.add('d-none');
+            positionInfo.classList.remove('d-none');
+            contractLabel.textContent = 'Sell';
+            sharesLabel.textContent = 'Selling:';
+            resultLabel.textContent = 'You receive:';
+        } else {
+            // Buy mode: input is dollar amount
+            actionInput.value = 'buy';
+            amountLabel.textContent = 'Amount to bet';
+            amountPrefix.classList.remove('d-none');
+            sharesSuffix.classList.add('d-none');
+            amountInput.step = '0.01';
+            amountInput.min = '0.01';
+            amountInput.value = '5.00';
+            balanceInfo.classList.remove('d-none');
+            positionInfo.classList.add('d-none');
+            contractLabel.textContent = 'Bet on';
+            sharesLabel.textContent = 'Shares:';
+            resultLabel.textContent = 'Payout if correct:';
+        }
+
+        updateQuickBetEstimate();
     }
 
     // Update Quick Bet estimates
@@ -732,22 +885,38 @@
 
         if (!amountInput) return;
 
-        const amount = parseFloat(amountInput.value) || 0;
+        const isSell = isSellMode();
         const contractType = yesRadio.checked ? 'yes' : 'no';
         const price = getMarketPrice(contractType);
-        const shares = Math.floor(amount * 100 / price);
-        const payout = shares; // Each share pays $1 if correct
-
-        // Update displays
-        sharesDisplay.innerHTML = '~<strong>' + shares + '</strong> shares';
-        priceDisplay.innerHTML = '<strong>' + price + '</strong>c each';
-        payoutDisplay.innerHTML = '<strong>$' + payout.toFixed(2) + '</strong>';
-
-        // Update button text
         const contractLabel = contractType.toUpperCase();
-        const buttonClass = contractType === 'yes' ? 'btn-success' : 'btn-danger';
-        betButton.innerHTML = '<i class="bi bi-lightning-charge"></i> Bet $' + amount.toFixed(2) + ' on ' + contractLabel;
-        betButton.className = 'btn ' + buttonClass + ' btn-lg w-100';
+
+        if (isSell) {
+            // Sell mode: user enters number of shares
+            const shares = parseInt(amountInput.value) || 0;
+            const payout = (shares * price / 100).toFixed(2);
+
+            sharesDisplay.innerHTML = '<strong>' + shares + '</strong> shares';
+            priceDisplay.innerHTML = '<strong>' + price + '</strong>c each';
+            payoutDisplay.innerHTML = '<strong class="text-success">$' + payout + '</strong>';
+
+            // Update button
+            betButton.innerHTML = '<i class="bi bi-cash-stack"></i> Sell ' + shares + ' ' + contractLabel + ' for ~$' + payout;
+            betButton.className = 'btn btn-danger btn-lg w-100';
+        } else {
+            // Buy mode: user enters dollar amount
+            const amount = parseFloat(amountInput.value) || 0;
+            const shares = Math.floor(amount * 100 / price);
+            const payout = shares; // Each share pays $1 if correct
+
+            sharesDisplay.innerHTML = '~<strong>' + shares + '</strong> shares';
+            priceDisplay.innerHTML = '<strong>' + price + '</strong>c each';
+            payoutDisplay.innerHTML = '<strong>$' + payout.toFixed(2) + '</strong>';
+
+            // Update button
+            const buttonClass = contractType === 'yes' ? 'btn-success' : 'btn-danger';
+            betButton.innerHTML = '<i class="bi bi-lightning-charge"></i> Buy ' + contractLabel + ' for $' + amount.toFixed(2);
+            betButton.className = 'btn ' + buttonClass + ' btn-lg w-100';
+        }
     }
 
     // Calculate order cost dynamically (Limit Order tab)
@@ -785,6 +954,8 @@
         const quickAmount = document.getElementById('quick_amount');
         const quickYes = document.getElementById('quick_type_yes');
         const quickNo = document.getElementById('quick_type_no');
+        const quickBuy = document.getElementById('quick_buy');
+        const quickSell = document.getElementById('quick_sell');
 
         if (quickAmount) {
             quickAmount.addEventListener('input', updateQuickBetEstimate);
@@ -794,6 +965,13 @@
         }
         if (quickNo) {
             quickNo.addEventListener('change', updateQuickBetEstimate);
+        }
+        // Buy/Sell toggle listeners
+        if (quickBuy) {
+            quickBuy.addEventListener('change', updateBuySellMode);
+        }
+        if (quickSell) {
+            quickSell.addEventListener('change', updateBuySellMode);
         }
 
         // Initialize Quick Bet estimate
@@ -805,6 +983,171 @@
         if (socket) {
             socket.close();
         }
+    });
+
+    // ====== PRICE CHART ======
+    let priceChart = null;
+    let currentTimeframe = '1h';
+
+    // Initialize price chart
+    function initPriceChart() {
+        const ctx = document.getElementById('priceChart');
+        if (!ctx) return;
+
+        priceChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                datasets: [
+                    {
+                        label: 'YES Price',
+                        data: [],
+                        borderColor: 'rgb(25, 135, 84)',
+                        backgroundColor: 'rgba(25, 135, 84, 0.1)',
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 0,
+                        pointHoverRadius: 4,
+                        borderWidth: 2
+                    },
+                    {
+                        label: 'NO Price',
+                        data: [],
+                        borderColor: 'rgb(220, 53, 69)',
+                        backgroundColor: 'rgba(220, 53, 69, 0.1)',
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 0,
+                        pointHoverRadius: 4,
+                        borderWidth: 2
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: {
+                    intersect: false,
+                    mode: 'index'
+                },
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top',
+                        labels: {
+                            boxWidth: 12,
+                            padding: 8,
+                            font: { size: 11 }
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return context.dataset.label + ': ' + context.parsed.y + 'c';
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        type: 'time',
+                        time: {
+                            displayFormats: {
+                                minute: 'HH:mm',
+                                hour: 'HH:mm',
+                                day: 'MMM d'
+                            }
+                        },
+                        grid: { display: false },
+                        ticks: { font: { size: 10 } }
+                    },
+                    y: {
+                        min: 0,
+                        max: 100,
+                        ticks: {
+                            callback: function(value) {
+                                return value + 'c';
+                            },
+                            font: { size: 10 }
+                        },
+                        grid: { color: 'rgba(0,0,0,0.05)' }
+                    }
+                }
+            }
+        });
+
+        // Load initial data
+        loadPriceHistory(currentTimeframe);
+
+        // Set up timeframe buttons
+        document.querySelectorAll('[data-timeframe]').forEach(btn => {
+            btn.addEventListener('click', function() {
+                document.querySelectorAll('[data-timeframe]').forEach(b => b.classList.remove('active'));
+                this.classList.add('active');
+                currentTimeframe = this.dataset.timeframe;
+                loadPriceHistory(currentTimeframe);
+            });
+        });
+    }
+
+    // Load price history from API
+    function loadPriceHistory(timeframe) {
+        const loading = document.getElementById('chartLoading');
+        if (loading) loading.style.display = 'block';
+
+        fetch('/api/markets/' + marketId + '/price-history/?timeframe=' + timeframe)
+            .then(response => response.json())
+            .then(data => {
+                if (loading) loading.style.display = 'none';
+
+                if (data.price_history && data.price_history.length > 0) {
+                    // Format data for Chart.js
+                    const yesData = data.price_history.map(p => ({
+                        x: new Date(p.time),
+                        y: p.yes_price
+                    }));
+                    const noData = data.price_history.map(p => ({
+                        x: new Date(p.time),
+                        y: p.no_price
+                    }));
+
+                    priceChart.data.datasets[0].data = yesData;
+                    priceChart.data.datasets[1].data = noData;
+                    priceChart.update('none');
+                } else {
+                    // No data - show current price as single point
+                    const now = new Date();
+                    priceChart.data.datasets[0].data = [{ x: now, y: marketPrices.yesPrice || 50 }];
+                    priceChart.data.datasets[1].data = [{ x: now, y: marketPrices.noPrice || 50 }];
+                    priceChart.update('none');
+                }
+            })
+            .catch(err => {
+                console.error('Failed to load price history:', err);
+                if (loading) loading.style.display = 'none';
+            });
+    }
+
+    // Add new price point to chart (called on WebSocket updates)
+    function addPriceToChart(yesPrice, noPrice) {
+        if (!priceChart) return;
+
+        const now = new Date();
+        priceChart.data.datasets[0].data.push({ x: now, y: yesPrice });
+        priceChart.data.datasets[1].data.push({ x: now, y: noPrice });
+
+        // Keep only last 100 points for performance
+        if (priceChart.data.datasets[0].data.length > 100) {
+            priceChart.data.datasets[0].data.shift();
+            priceChart.data.datasets[1].data.shift();
+        }
+
+        priceChart.update('none');
+    }
+
+    // Initialize chart on DOM ready
+    document.addEventListener('DOMContentLoaded', function() {
+        // Small delay to ensure Chart.js is loaded
+        setTimeout(initPriceChart, 100);
     });
 })();
 </script>

@@ -12,6 +12,7 @@ from .models import User, Category, Event, Market, Order, Trade, Position, Trans
 from .forms import UserRegistrationForm
 from .forms import OrderForm, QuickOrderForm
 from .matching_engine import MatchingEngine, get_orderbook
+from .bookmaker_amm import BookmakerAMM, get_bookmaker_prices
 from .exceptions import (
     TradingError,
     InsufficientFundsError,
@@ -101,13 +102,25 @@ def market_detail(request, pk):
         pk=pk
     )
 
-    # Get orderbook
+    # Get AMM prices (live prices from the AMM)
+    amm_prices = get_bookmaker_prices(market)
+
+    # Get orderbook (for limit orders)
     orderbook = get_orderbook(market, depth=10)
 
-    # Get recent trades
+    # Get recent trades (both AMM and orderbook)
     recent_trades = Trade.objects.filter(market=market).select_related(
         'buyer', 'seller'
     ).order_by('-executed_at')[:20]
+
+    # Get AMM trades for this market
+    from .models import AMMTrade
+    try:
+        amm_trades = AMMTrade.objects.filter(
+            pool__market=market
+        ).select_related('user').order_by('-executed_at')[:20]
+    except:
+        amm_trades = []
 
     # Get user's position and open orders if logged in
     user_position = None
@@ -128,8 +141,10 @@ def market_detail(request, pk):
     context = {
         'market': market,
         'event': market.event,
+        'amm_prices': amm_prices,
         'orderbook': orderbook,
         'recent_trades': recent_trades,
+        'amm_trades': amm_trades,
         'user_position': user_position,
         'user_orders': user_orders,
         'order_form': order_form,
@@ -210,82 +225,88 @@ def place_order(request, pk):
 @login_required
 @require_POST
 def place_quick_bet(request, pk):
-    """Place a quick bet (market order) - simplified interface.
+    """Place a quick bet (buy or sell) using the AMM - Polymarket style.
 
-    User specifies dollar amount and contract type (YES/NO).
-    System determines price from best ask or last traded price.
+    Buy: User specifies dollar amount and contract type (YES/NO).
+    Sell: User specifies number of shares to sell.
+    AMM provides instant execution with smooth price movement.
     """
     market = get_object_or_404(Market, pk=pk)
 
     # Parse parameters
+    action = request.POST.get('action', 'buy')  # 'buy' or 'sell'
     contract_type = request.POST.get('contract_type')
-
-    try:
-        amount = Decimal(request.POST.get('amount', '0'))
-    except (ValueError, TypeError, InvalidOperation):
-        messages.error(request, "Invalid amount.")
-        return redirect('predictions:market_detail', pk=pk)
 
     # Validate contract type
     if contract_type not in ['yes', 'no']:
         messages.error(request, "Please select YES or NO.")
         return redirect('predictions:market_detail', pk=pk)
 
-    # Validate amount
-    if amount <= 0:
-        messages.error(request, "Amount must be greater than $0.")
-        return redirect('predictions:market_detail', pk=pk)
-
-    if amount > request.user.available_balance:
-        messages.error(request, f"Insufficient balance. You have ${request.user.available_balance:.2f} available.")
-        return redirect('predictions:market_detail', pk=pk)
-
-    # Determine market price (Polymarket-style priority)
-    # 1. Best ask (lowest sell order)
-    # 2. Last traded price
-    # 3. Default to 50 cents
-    if contract_type == 'yes':
-        price = market.best_yes_ask or market.last_yes_price or 50
-    else:
-        price = market.best_no_ask or market.last_no_price or 50
-
-    # Calculate quantity from amount
-    # amount = quantity * price / 100
-    # quantity = amount * 100 / price
-    quantity = int((amount * 100) / price)
-
-    if quantity < 1:
-        messages.error(request, f"Amount too small. Minimum bet at {price}c is ${price/100:.2f}.")
-        return redirect('predictions:market_detail', pk=pk)
-
     try:
-        # Place as market order
-        engine = MatchingEngine(market)
-        order, trades = engine.place_order(
-            user=request.user,
-            side='buy',
-            contract_type=contract_type,
-            price=price,
-            quantity=quantity,
-            order_type='market'
-        )
+        # Use Bookmaker AMM for instant execution with vig
+        amm = BookmakerAMM(market)
 
-        if trades:
-            total_filled = sum(t.quantity for t in trades)
-            avg_price = sum(t.price * t.quantity for t in trades) / total_filled if total_filled else price
-            actual_cost = sum(t.price * t.quantity / 100 for t in trades)
+        if action == 'sell':
+            # SELL: User enters number of shares to sell
+            try:
+                quantity = int(request.POST.get('amount', '0'))
+            except (ValueError, TypeError):
+                messages.error(request, "Invalid quantity.")
+                return redirect('predictions:market_detail', pk=pk)
+
+            if quantity <= 0:
+                messages.error(request, "Quantity must be at least 1 share.")
+                return redirect('predictions:market_detail', pk=pk)
+
+            # Execute the sell
+            trade = amm.sell(request.user, contract_type, quantity)
+
+            # Get the new price after trade
+            yes_price, no_price = amm.get_display_prices()
+            new_price = yes_price if contract_type == 'yes' else no_price
+
             messages.success(
                 request,
-                f"Bet placed! Bought {total_filled} {contract_type.upper()} shares "
-                f"at avg {avg_price:.0f}c for ${actual_cost:.2f}. "
-                f"Potential payout: ${total_filled:.2f}"
+                f"Sold {quantity} {contract_type.upper()} shares "
+                f"at avg {float(trade.avg_price):.1f}c for ${float(trade.total_cost):.2f}. "
+                f"New price: {new_price}c"
             )
+
         else:
-            # Order went to orderbook (no immediate fill)
+            # BUY: User enters dollar amount
+            try:
+                amount = Decimal(request.POST.get('amount', '0'))
+            except (ValueError, TypeError, InvalidOperation):
+                messages.error(request, "Invalid amount.")
+                return redirect('predictions:market_detail', pk=pk)
+
+            if amount <= 0:
+                messages.error(request, "Amount must be greater than $0.")
+                return redirect('predictions:market_detail', pk=pk)
+
+            if amount > request.user.available_balance:
+                messages.error(request, f"Insufficient balance. You have ${request.user.available_balance:.2f} available.")
+                return redirect('predictions:market_detail', pk=pk)
+
+            # Calculate how many shares the amount buys
+            quantity = amm.calculate_shares_for_amount(contract_type, amount)
+
+            if quantity < 1:
+                messages.error(request, f"Amount too small to buy any shares.")
+                return redirect('predictions:market_detail', pk=pk)
+
+            # Execute the buy
+            trade = amm.buy(request.user, contract_type, quantity)
+
+            # Get the new price after trade
+            yes_price, no_price = amm.get_display_prices()
+            new_price = yes_price if contract_type == 'yes' else no_price
+
             messages.success(
                 request,
-                f"Order placed: {quantity} {contract_type.upper()} @ {price}c. "
-                f"Waiting for a seller to match."
+                f"Bought {quantity} {contract_type.upper()} shares "
+                f"at avg {float(trade.avg_price):.1f}c for ${float(trade.total_cost):.2f}. "
+                f"New price: {new_price}c. Potential payout: ${quantity:.2f}"
             )
 
     except InsufficientFundsError as e:
@@ -518,6 +539,78 @@ def api_user_position(request, pk):
             'unrealized_pnl': 0,
             'realized_pnl': 0,
         })
+
+
+def api_price_history(request, pk):
+    """Get price history from AMM trades for charting."""
+    from .models import AMMTrade
+    from datetime import timedelta
+
+    market = get_object_or_404(Market, pk=pk)
+
+    # Parse timeframe parameter
+    timeframe = request.GET.get('timeframe', '24h')
+    now = timezone.now()
+
+    if timeframe == '1h':
+        since = now - timedelta(hours=1)
+    elif timeframe == '24h':
+        since = now - timedelta(hours=24)
+    elif timeframe == '7d':
+        since = now - timedelta(days=7)
+    else:  # 'all'
+        since = None
+
+    # Get AMM trades ordered by time
+    queryset = AMMTrade.objects.filter(pool__market=market)
+    if since:
+        queryset = queryset.filter(executed_at__gte=since)
+
+    trades = queryset.order_by('executed_at').values(
+        'executed_at', 'price_after', 'contract_type', 'side'
+    )
+
+    # Build price history
+    price_history = []
+
+    # Add initial price point (50/50)
+    if trades:
+        first_trade = trades[0]
+        price_history.append({
+            'time': (first_trade['executed_at'].timestamp() - 1) * 1000,  # 1 second before first trade
+            'yes_price': 50,
+            'no_price': 50,
+        })
+
+    # Add each trade's resulting price
+    for trade in trades:
+        yes_price = trade['price_after']
+        no_price = 100 - trade['price_after']
+
+        # If this was a NO trade, the price_after is for NO, so flip it
+        if trade['contract_type'] == 'no':
+            no_price = trade['price_after']
+            yes_price = 100 - trade['price_after']
+
+        price_history.append({
+            'time': trade['executed_at'].timestamp() * 1000,  # JavaScript timestamp
+            'yes_price': yes_price,
+            'no_price': no_price,
+        })
+
+    # Add current price as final point
+    price_history.append({
+        'time': timezone.now().timestamp() * 1000,
+        'yes_price': market.last_yes_price,
+        'no_price': market.last_no_price,
+    })
+
+    return JsonResponse({
+        'market_id': market.pk,
+        'price_history': price_history,
+        'current_yes': market.last_yes_price,
+        'current_no': market.last_no_price,
+    })
 
 
 def register(request):

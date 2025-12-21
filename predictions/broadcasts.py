@@ -73,6 +73,42 @@ def broadcast_trade_executed(trade):
     )
 
 
+def broadcast_amm_trade(amm_trade, market):
+    """
+    Broadcast an AMM trade execution to all connected clients.
+
+    Call this after an AMM trade is created.
+
+    Args:
+        amm_trade: AMMTrade model instance
+        market: Market model instance
+    """
+    channel_layer = get_channel_layer()
+    if channel_layer is None:
+        return
+
+    group_name = f'market_{market.pk}'
+
+    async_to_sync(channel_layer.group_send)(
+        group_name,
+        {
+            'type': 'trade_executed',
+            'data': {
+                'trade_id': amm_trade.pk,
+                'market_id': market.pk,
+                'side': amm_trade.side,
+                'contract_type': amm_trade.contract_type,
+                'quantity': amm_trade.quantity,
+                'avg_price': float(amm_trade.avg_price),
+                'price_before': amm_trade.price_before,
+                'price_after': amm_trade.price_after,
+                'total_cost': float(amm_trade.total_cost),
+                'executed_at': amm_trade.executed_at.isoformat(),
+            }
+        }
+    )
+
+
 def broadcast_orderbook_update(market, orderbook=None):
     """
     Broadcast orderbook changes to all connected clients.
