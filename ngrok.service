@@ -1,0 +1,16 @@
+[Unit]
+Description=ngrok tunnel for Voy A Mi
+After=network.target voy_a_mi.service
+
+[Service]
+User=kamekazz
+Group=kamekazz
+ExecStart=/usr/local/bin/ngrok http 8000 --url https://default.internal --basic-auth="manuel:titolovO"
+Restart=always
+RestartSec=10
+
+# ngrok config location
+Environment="HOME=/home/kamekazz"
+
+[Install]
+WantedBy=multi-user.target

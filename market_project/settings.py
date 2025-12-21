@@ -27,6 +27,13 @@ DEBUG = True
 
 ALLOWED_HOSTS = ['192.168.1.42', 'localhost', '127.0.0.1', '*']
 
+# CSRF trusted origins for external access (ngrok, production domains)
+CSRF_TRUSTED_ORIGINS = [
+    'https://voy-a-mi.ngrok.app',
+    'https://*.ngrok.app',
+    'https://*.ngrok-free.app',
+]
+
 
 # Application definition
 
