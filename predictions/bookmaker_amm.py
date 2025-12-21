@@ -30,9 +30,9 @@ class BookmakerAMM:
     # With these settings, max loss is roughly: MAX_IMBALANCE * (1 - avg_price/100)
     # E.g., 50 shares at 52c each means exposure of 50 * $0.48 = $24 max loss
     DEFAULT_VIG = Decimal('0.05')  # 5% vig (prices sum to ~105%)
-    DEFAULT_MAX_LOSS = Decimal('50.00')  # Max loss capped at $50 per outcome
+    DEFAULT_MAX_LOSS = Decimal('200.00')  # Max loss capped at $200 per outcome
     DEFAULT_FEE = Decimal('0.02')  # 2% transaction fee
-    DEFAULT_MAX_IMBALANCE = 50  # Max 50 shares imbalance (limits exposure)
+    DEFAULT_MAX_IMBALANCE = 200  # Max 200 shares imbalance (allows ~$100 bets)
 
     def __init__(self, market: Market):
         self.market = market
@@ -288,6 +288,53 @@ class BookmakerAMM:
 
         quantity = int(amount_float / (price_dollars * fee_factor))
         return max(0, quantity)
+
+    def max_fillable_quantity(self, contract_type: str) -> int:
+        """
+        Calculate the maximum quantity the AMM can fill for a given contract type.
+
+        Returns the max shares that can be bought before hitting:
+        1. Imbalance limit
+        2. Max loss limit
+        """
+        yes_shares = float(self.pool.yes_shares)
+        no_shares = float(self.pool.no_shares)
+        exposure = self.calculate_exposure()
+
+        # Constraint 1: Imbalance limit
+        # For YES: (yes_shares + qty) - no_shares <= max_imbalance
+        # So: qty <= max_imbalance + no_shares - yes_shares
+        if contract_type == 'yes':
+            imbalance_limit = self.max_imbalance + no_shares - yes_shares
+        else:
+            imbalance_limit = self.max_imbalance + yes_shares - no_shares
+
+        # Constraint 2: Max loss limit
+        # For YES: (yes_payout + qty) - (money + cost) <= max_loss
+        # Approximation: cost ≈ qty * price / 100
+        # So: yes_payout + qty - money - qty*price/100 <= max_loss
+        # qty * (1 - price/100) <= max_loss - yes_payout + money
+        # qty <= (max_loss - current_exposure) / (1 - price/100)
+        yes_price, no_price = self.get_prices_with_vig()
+
+        if contract_type == 'yes':
+            current_exposure = exposure['yes_exposure']
+            price_cents = yes_price
+        else:
+            current_exposure = exposure['no_exposure']
+            price_cents = no_price
+
+        remaining_loss_capacity = float(self.max_loss) - current_exposure
+        price_factor = 1 - (price_cents / 100)
+
+        if price_factor <= 0:
+            loss_limit = 0
+        else:
+            loss_limit = remaining_loss_capacity / price_factor
+
+        # Return the minimum of both constraints (can't exceed either)
+        max_qty = int(min(imbalance_limit, loss_limit))
+        return max(0, max_qty)
 
     def calculate_sell_payout(self, contract_type: str, quantity: int) -> dict:
         """

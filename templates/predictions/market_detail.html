@@ -114,9 +114,9 @@
             <div class="card-body">
                 {% if user.is_authenticated %}
                 <div class="tab-content" id="tradingTabContent">
-                    <!-- Quick Bet Tab (Default) -->
+                    <!-- Quick Bet Tab (Default) - Uses Hybrid System -->
                     <div class="tab-pane fade show active" id="quick-bet" role="tabpanel">
-                        <form method="post" action="{% url 'predictions:place_quick_bet' market.pk %}" id="quick-bet-form">
+                        <form method="post" action="{% url 'predictions:place_hybrid_bet' market.pk %}" id="quick-bet-form">
                             {% csrf_token %}
                             <input type="hidden" name="action" id="quick_action" value="buy">
 

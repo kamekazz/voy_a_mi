@@ -321,6 +321,144 @@ def place_quick_bet(request, pk):
 
 @login_required
 @require_POST
+def place_hybrid_bet(request, pk):
+    """
+    Hybrid bet: Fill what AMM can handle instantly, queue the rest as a limit order.
+
+    For BUY orders:
+    - Part gets filled instantly via AMM
+    - Remainder becomes a pending limit order
+    - User can cancel the pending portion anytime
+
+    For SELL orders:
+    - Just uses AMM directly (selling shares you own)
+    """
+    market = get_object_or_404(Market, pk=pk)
+    action = request.POST.get('action', 'buy')
+    contract_type = request.POST.get('contract_type')
+
+    if contract_type not in ['yes', 'no']:
+        messages.error(request, "Please select YES or NO.")
+        return redirect('predictions:market_detail', pk=pk)
+
+    try:
+        amm = BookmakerAMM(market)
+
+        # SELL: Just use AMM directly
+        if action == 'sell':
+            try:
+                quantity = int(request.POST.get('amount', '0'))
+            except (ValueError, TypeError):
+                messages.error(request, "Invalid quantity.")
+                return redirect('predictions:market_detail', pk=pk)
+
+            if quantity <= 0:
+                messages.error(request, "Quantity must be at least 1 share.")
+                return redirect('predictions:market_detail', pk=pk)
+
+            trade = amm.sell(request.user, contract_type, quantity)
+            yes_price, no_price = amm.get_display_prices()
+            new_price = yes_price if contract_type == 'yes' else no_price
+
+            messages.success(
+                request,
+                f"Sold {quantity} {contract_type.upper()} shares "
+                f"at avg {float(trade.avg_price):.1f}c for ${float(trade.total_cost):.2f}. "
+                f"New price: {new_price}c"
+            )
+            return redirect('predictions:market_detail', pk=pk)
+
+        # BUY: Hybrid system (AMM + Order Book)
+        try:
+            amount = Decimal(request.POST.get('amount', '0'))
+        except (ValueError, TypeError, InvalidOperation):
+            messages.error(request, "Invalid amount.")
+            return redirect('predictions:market_detail', pk=pk)
+
+        if amount <= 0:
+            messages.error(request, "Amount must be greater than $0.")
+            return redirect('predictions:market_detail', pk=pk)
+
+        if amount > request.user.available_balance:
+            messages.error(request, f"Insufficient balance. You have ${request.user.available_balance:.2f} available.")
+            return redirect('predictions:market_detail', pk=pk)
+
+        # Calculate total shares requested
+        total_quantity = amm.calculate_shares_for_amount(contract_type, amount)
+        if total_quantity < 1:
+            messages.error(request, "Amount too small to buy any shares.")
+            return redirect('predictions:market_detail', pk=pk)
+
+        # Calculate how much AMM can fill
+        max_amm_qty = amm.max_fillable_quantity(contract_type)
+        amm_quantity = min(total_quantity, max_amm_qty)
+
+        amm_trade = None
+        pending_order = None
+        amm_cost = Decimal('0')
+
+        # Step 1: Fill what AMM can handle
+        if amm_quantity > 0:
+            amm_trade = amm.buy(request.user, contract_type, amm_quantity)
+            amm_cost = amm_trade.total_cost
+
+        # Step 2: Create limit order for remainder
+        remaining_quantity = total_quantity - amm_quantity
+        if remaining_quantity > 0:
+            # Use current fair price for the limit order
+            yes_price, no_price = amm.get_display_prices()
+            order_price = yes_price if contract_type == 'yes' else no_price
+
+            # Create limit order via matching engine
+            engine = MatchingEngine(market)
+            pending_order, trades = engine.place_order(
+                user=request.user,
+                side='buy',
+                contract_type=contract_type,
+                price=order_price,
+                quantity=remaining_quantity
+            )
+
+        # Build success message
+        if amm_trade and pending_order:
+            # Both: partial AMM fill + pending order
+            messages.success(
+                request,
+                f"Filled {amm_quantity} {contract_type.upper()} shares instantly for ${float(amm_cost):.2f}. "
+                f"Pending: {remaining_quantity} shares @ {order_price}c (cancel anytime in Orders)."
+            )
+        elif amm_trade:
+            # Full AMM fill
+            yes_price, no_price = amm.get_display_prices()
+            new_price = yes_price if contract_type == 'yes' else no_price
+            messages.success(
+                request,
+                f"Bought {amm_quantity} {contract_type.upper()} shares "
+                f"at avg {float(amm_trade.avg_price):.1f}c for ${float(amm_cost):.2f}. "
+                f"New price: {new_price}c"
+            )
+        elif pending_order:
+            # AMM at capacity, all goes to order book
+            yes_price, no_price = amm.get_display_prices()
+            order_price = yes_price if contract_type == 'yes' else no_price
+            messages.info(
+                request,
+                f"AMM at capacity. Created limit order for {remaining_quantity} {contract_type.upper()} @ {order_price}c. "
+                f"Will fill when someone bets the other side."
+            )
+
+    except InsufficientFundsError as e:
+        messages.error(request, str(e))
+    except MarketNotActiveError as e:
+        messages.error(request, str(e))
+    except TradingError as e:
+        messages.error(request, f"Trading error: {e}")
+
+    return redirect('predictions:market_detail', pk=pk)
+
+
+@login_required
+@require_POST
 def cancel_order(request, pk):
     """Cancel an open order."""
     order = get_object_or_404(Order, pk=pk)
