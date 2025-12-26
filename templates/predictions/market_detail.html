@@ -114,89 +114,64 @@
             <div class="card-body">
                 {% if user.is_authenticated %}
                 <div class="tab-content" id="tradingTabContent">
-                    <!-- Quick Bet Tab (Default) - Uses Hybrid System -->
+                    <!-- Quick Bet Tab (Market Order) -->
                     <div class="tab-pane fade show active" id="quick-bet" role="tabpanel">
-                        <form method="post" action="{% url 'predictions:place_hybrid_bet' market.pk %}" id="quick-bet-form">
+                        <form method="post" action="{% url 'predictions:place_order' market.pk %}" id="quick-bet-form">
                             {% csrf_token %}
-                            <input type="hidden" name="action" id="quick_action" value="buy">
+                            <!-- Market Order implies price is None/Empty -->
+                            <input type="hidden" name="price" value="">
 
                             <!-- Buy/Sell Toggle -->
                             <div class="mb-3">
                                 <div class="btn-group w-100" role="group">
-                                    <input type="radio" class="btn-check" name="side_toggle" id="quick_buy" value="buy" checked>
+                                    <input type="radio" class="btn-check" name="order_type" id="quick_buy" value="BUY" checked>
                                     <label class="btn btn-outline-success" for="quick_buy">
                                         <i class="bi bi-cart-plus"></i> Buy
                                     </label>
 
-                                    <input type="radio" class="btn-check" name="side_toggle" id="quick_sell" value="sell">
+                                    <input type="radio" class="btn-check" name="order_type" id="quick_sell" value="SELL">
                                     <label class="btn btn-outline-danger" for="quick_sell">
                                         <i class="bi bi-cart-dash"></i> Sell
                                     </label>
                                 </div>
                             </div>
 
-                            <!-- Contract Type - Big Toggle -->
+                            <!-- Contract Type -->
                             <div class="mb-4">
-                                <label class="form-label" id="contract-label">Bet on</label>
+                                <label class="form-label">Contract</label>
                                 <div class="btn-group w-100" role="group">
-                                    <input type="radio" class="btn-check" name="contract_type" id="quick_type_yes" value="yes" checked>
+                                    <input type="radio" class="btn-check" name="outcome" id="quick_type_yes" value="YES" checked>
                                     <label class="btn btn-outline-success btn-lg" for="quick_type_yes">
                                         <i class="bi bi-check-circle"></i> YES
                                     </label>
 
-                                    <input type="radio" class="btn-check" name="contract_type" id="quick_type_no" value="no">
+                                    <input type="radio" class="btn-check" name="outcome" id="quick_type_no" value="NO">
                                     <label class="btn btn-outline-danger btn-lg" for="quick_type_no">
                                         <i class="bi bi-x-circle"></i> NO
                                     </label>
                                 </div>
                             </div>
 
-                            <!-- Amount/Quantity Input -->
-                            <div class="mb-3" id="amount-input-group">
-                                <label class="form-label" id="amount-label">Amount to bet</label>
+                            <!-- Quantity Input -->
+                            <div class="mb-3">
+                                <label class="form-label">Quantity (Shares)</label>
                                 <div class="input-group input-group-lg">
-                                    <span class="input-group-text" id="amount-prefix">$</span>
-                                    <input type="number" class="form-control" name="amount" id="quick_amount"
-                                           min="0.01" step="0.01" value="5.00" required>
-                                    <span class="input-group-text d-none" id="shares-suffix">shares</span>
+                                    <input type="number" class="form-control" name="quantity" id="quick_quantity"
+                                           min="1" step="1" value="10" required>
+                                    <span class="input-group-text">shares</span>
                                 </div>
-                                <small class="text-muted" id="balance-info">
-                                    Balance: <strong>${{ user.available_balance|floatformat:2 }}</strong>
-                                </small>
-                                <small class="text-muted d-none" id="position-info">
-                                    {% if user_position %}
-                                    You own: <strong><span id="yes-position">{{ user_position.yes_quantity }}</span> YES</strong>,
-                                    <strong><span id="no-position">{{ user_position.no_quantity }}</span> NO</strong>
-                                    {% else %}
-                                    You own: <strong>0 YES</strong>, <strong>0 NO</strong>
-                                    {% endif %}
+                                <small class="text-muted">
+                                    Est. Cost: <span id="quick-est-cost">-</span>
                                 </small>
                             </div>
 
-                            <!-- Estimate Display -->
-                            <div class="bg-light rounded p-3 mb-3" id="quick-bet-estimate">
-                                <div class="d-flex justify-content-between mb-2">
-                                    <span class="text-muted" id="estimate-shares-label">Shares:</span>
-                                    <span id="estimate-shares">~<strong>10</strong> shares</span>
-                                </div>
-                                <div class="d-flex justify-content-between mb-2">
-                                    <span class="text-muted">Price:</span>
-                                    <span id="estimate-price"><strong>50</strong>c each</span>
-                                </div>
-                                <hr class="my-2">
-                                <div class="d-flex justify-content-between">
-                                    <span class="text-muted" id="estimate-result-label">Payout if correct:</span>
-                                    <span class="text-success" id="estimate-payout"><strong>$10.00</strong></span>
-                                </div>
-                            </div>
-
-                            <button type="submit" class="btn btn-success btn-lg w-100" id="quick-bet-button">
-                                <i class="bi bi-lightning-charge"></i> Bet $5.00 on YES
+                            <button type="submit" class="btn btn-success btn-lg w-100">
+                                <i class="bi bi-lightning-charge"></i> Place Market Order
                             </button>
                         </form>
                     </div>
 
-                    <!-- Limit Order Tab (Advanced) -->
+                    <!-- Limit Order Tab -->
                     <div class="tab-pane fade" id="limit-order" role="tabpanel">
                         <form method="post" action="{% url 'predictions:place_order' market.pk %}" id="order-form">
                             {% csrf_token %}
@@ -205,10 +180,10 @@
                             <div class="mb-3">
                                 <label class="form-label">Action</label>
                                 <div class="btn-group w-100" role="group">
-                                    <input type="radio" class="btn-check" name="side" id="side_buy" value="buy" checked>
+                                    <input type="radio" class="btn-check" name="order_type" id="side_buy" value="BUY" checked>
                                     <label class="btn btn-outline-success" for="side_buy">Buy</label>
 
-                                    <input type="radio" class="btn-check" name="side" id="side_sell" value="sell">
+                                    <input type="radio" class="btn-check" name="order_type" id="side_sell" value="SELL">
                                     <label class="btn btn-outline-danger" for="side_sell">Sell</label>
                                 </div>
                             </div>
@@ -217,10 +192,10 @@
                             <div class="mb-3">
                                 <label class="form-label">Contract</label>
                                 <div class="btn-group w-100" role="group">
-                                    <input type="radio" class="btn-check" name="contract_type" id="type_yes" value="yes" checked>
+                                    <input type="radio" class="btn-check" name="outcome" id="type_yes" value="YES" checked>
                                     <label class="btn btn-outline-success" for="type_yes">YES</label>
 
-                                    <input type="radio" class="btn-check" name="contract_type" id="type_no" value="no">
+                                    <input type="radio" class="btn-check" name="outcome" id="type_no" value="NO">
                                     <label class="btn btn-outline-danger" for="type_no">NO</label>
                                 </div>
                             </div>
@@ -230,10 +205,10 @@
                                 <label class="form-label">Price (1-99c)</label>
                                 <div class="input-group">
                                     <input type="number" class="form-control" name="price" id="price_input"
-                                           min="1" max="99" value="50" required>
-                                    <span class="input-group-text">c</span>
+                                           min="0.01" max="0.99" step="0.01" value="0.50" required>
+                                    <span class="input-group-text">$</span>
                                 </div>
-                                <small class="text-muted">Each contract pays $1 if correct, $0 if wrong</small>
+                                <small class="text-muted">Price per share (e.g. 0.50)</small>
                             </div>
 
                             <!-- Quantity -->
@@ -243,17 +218,8 @@
                                        min="1" value="10" required>
                             </div>
 
-                            <div class="d-flex justify-content-between align-items-center mb-3">
-                                <span class="text-muted">
-                                    Balance: <strong>${{ user.available_balance|floatformat:2 }}</strong>
-                                </span>
-                                <span class="text-muted" id="order_cost">
-                                    Max Cost: <strong>$5.00</strong>
-                                </span>
-                            </div>
-
                             <button type="submit" class="btn btn-primary btn-lg w-100">
-                                <i class="bi bi-check-circle"></i> Place Order
+                                <i class="bi bi-check-circle"></i> Place Limit Order
                             </button>
                         </form>
                     </div>
@@ -285,7 +251,7 @@
                                     <th class="text-end">Qty</th>
                                 </tr>
                             </thead>
-                            <tbody>
+                            <tbody id="yes-bids-body">
                                 {% for level in orderbook.yes_bids %}
                                 <tr class="orderbook-row bg-success bg-opacity-10">
                                     <td class="yes-color">{{ level.price }}c</td>
@@ -304,7 +270,7 @@
                                     <th class="text-end">Qty</th>
                                 </tr>
                             </thead>
-                            <tbody>
+                            <tbody id="yes-asks-body">
                                 {% for level in orderbook.yes_asks %}
                                 <tr class="orderbook-row">
                                     <td>{{ level.price }}c</td>
@@ -327,7 +293,7 @@
                                     <th class="text-end">Qty</th>
                                 </tr>
                             </thead>
-                            <tbody>
+                            <tbody id="no-bids-body">
                                 {% for level in orderbook.no_bids %}
                                 <tr class="orderbook-row bg-danger bg-opacity-10">
                                     <td class="no-color">{{ level.price }}c</td>
@@ -346,7 +312,7 @@
                                     <th class="text-end">Qty</th>
                                 </tr>
                             </thead>
-                            <tbody>
+                            <tbody id="no-asks-body">
                                 {% for level in orderbook.no_asks %}
                                 <tr class="orderbook-row">
                                     <td>{{ level.price }}c</td>
@@ -1143,6 +1109,69 @@
 
         priceChart.update('none');
     }
+
+    // ====== ORDER BOOK & POSITION POLLING ======
+    function fetchOrderBook() {
+        fetch('/predictions/api/markets/' + marketId + '/orderbook/')
+            .then(response => response.json())
+            .then(data => {
+                if (data.orderbook) {
+                    renderOrderBook(data.orderbook);
+                }
+            })
+            .catch(err => console.error('Error fetching orderbook:', err));
+    }
+
+    function renderOrderBook(book) {
+        renderTableRows('yes-bids-body', book.yes_bids, 'yes-color', 'bg-success bg-opacity-10');
+        renderTableRows('yes-asks-body', book.yes_asks, '', '');
+        renderTableRows('no-bids-body', book.no_bids, 'no-color', 'bg-danger bg-opacity-10');
+        renderTableRows('no-asks-body', book.no_asks, '', '');
+    }
+
+    function renderTableRows(elementId, rows, colorClass, rowClass) {
+        const tbody = document.getElementById(elementId);
+        if (!tbody) return;
+        
+        if (!rows || rows.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="2" class="text-muted text-center">No orders</td></tr>';
+            return;
+        }
+
+        let html = '';
+        rows.forEach(row => {
+            html += `<tr class="orderbook-row ${rowClass}">
+                        <td class="${colorClass}">${row.price}c</td>
+                        <td class="text-end">${row.quantity}</td>
+                     </tr>`;
+        });
+        tbody.innerHTML = html;
+    }
+
+    function fetchUserPosition() {
+        fetch('/predictions/api/markets/' + marketId + '/position/')
+            .then(response => response.json())
+            .then(data => {
+                updatePositionCard(data);
+                // Also update hidden inputs in Quick Bet
+                const yesPosSpan = document.getElementById('yes-position');
+                const noPosSpan = document.getElementById('no-position');
+                if (yesPosSpan) yesPosSpan.textContent = data.yes_quantity;
+                if (noPosSpan) noPosSpan.textContent = data.no_quantity;
+            })
+            .catch(err => console.error('Error fetching position:', err));
+    }
+
+    function updatePositionCard(data) {
+        // This is a simplified update. Ideally, we rebuild the card or specific elements.
+        // For now, let's just rely on page refresh for full card updates, 
+        // OR implements robust DOM updating if we really want "real-time" positions.
+        // Given complexity, let's stick to polling orderbook primarily.
+    }
+
+    // Poll every 2 seconds
+    setInterval(fetchOrderBook, 2000);
+    setInterval(fetchUserPosition, 5000);
 
     // Initialize chart on DOM ready
     document.addEventListener('DOMContentLoaded', function() {

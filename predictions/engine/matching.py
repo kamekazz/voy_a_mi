@@ -7,8 +7,9 @@ Implements price-time priority matching with atomic transactions.
 from django.db import transaction
 from django.db.models import F
 from decimal import Decimal
-from .models import User, Market, Order, Trade, Position, Transaction
-from .exceptions import (
+# Changed from .models to predictions.models (or ..models)
+from predictions.models import User, Market, Order, Trade, Position, Transaction
+from predictions.exceptions import (
     InsufficientFundsError,
     InsufficientPositionError,
     InvalidPriceError,
@@ -16,7 +17,7 @@ from .exceptions import (
     MarketNotActiveError,
     OrderCancellationError,
 )
-from .broadcasts import broadcast_market_update, broadcast_trade_executed, broadcast_orderbook_update
+from predictions.broadcasts import broadcast_market_update, broadcast_trade_executed, broadcast_orderbook_update
 
 
 class MatchingEngine:
@@ -505,12 +506,12 @@ class MatchingEngine:
         no_seller.save()
 
         # Update positions - deduct contracts and calculate realized P&L
-        yes_pnl = Decimal(quantity * (yes_price - float(yes_pos.yes_avg_cost))) / 100
+        yes_pnl = Decimal(quantity) * (Decimal(yes_price) - yes_pos.yes_avg_cost) / 100
         yes_pos.yes_quantity -= quantity
         yes_pos.realized_pnl += yes_pnl
         yes_pos.save()
 
-        no_pnl = Decimal(quantity * (no_price - float(no_pos.no_avg_cost))) / 100
+        no_pnl = Decimal(quantity) * (Decimal(no_price) - no_pos.no_avg_cost) / 100
         no_pos.no_quantity -= quantity
         no_pos.realized_pnl += no_pnl
         no_pos.save()
@@ -583,22 +584,20 @@ class MatchingEngine:
 
         if contract_type == 'yes':
             old_qty = position.yes_quantity
-            old_cost = float(position.yes_avg_cost)
             new_qty = old_qty + quantity
 
             if new_qty > 0:
-                position.yes_avg_cost = Decimal(
-                    (old_qty * old_cost + quantity * price) / new_qty
+                position.yes_avg_cost = (
+                    (Decimal(old_qty) * position.yes_avg_cost + Decimal(quantity * price)) / Decimal(new_qty)
                 )
             position.yes_quantity = new_qty
         else:
             old_qty = position.no_quantity
-            old_cost = float(position.no_avg_cost)
             new_qty = old_qty + quantity
 
             if new_qty > 0:
-                position.no_avg_cost = Decimal(
-                    (old_qty * old_cost + quantity * price) / new_qty
+                position.no_avg_cost = (
+                    (Decimal(old_qty) * position.no_avg_cost + Decimal(quantity * price)) / Decimal(new_qty)
                 )
             position.no_quantity = new_qty
 
@@ -716,37 +715,35 @@ class MatchingEngine:
         if contract_type == 'yes':
             # Buyer gets YES contracts
             old_qty = buyer_pos.yes_quantity
-            old_cost = float(buyer_pos.yes_avg_cost)
             new_qty = old_qty + quantity
 
             # Update average cost basis
             if new_qty > 0:
-                buyer_pos.yes_avg_cost = Decimal(
-                    (old_qty * old_cost + quantity * price) / new_qty
+                buyer_pos.yes_avg_cost = (
+                    (Decimal(old_qty) * buyer_pos.yes_avg_cost + Decimal(quantity) * Decimal(price)) / Decimal(new_qty)
                 )
             buyer_pos.yes_quantity = new_qty
 
             # Seller loses YES contracts
             seller_pos.yes_quantity -= quantity
             # Calculate realized P&L for seller
-            pnl = Decimal(quantity * (price - float(seller_pos.yes_avg_cost))) / 100
+            pnl = Decimal(quantity) * (Decimal(price) - seller_pos.yes_avg_cost) / 100
             seller_pos.realized_pnl += pnl
 
         else:  # NO contracts
             # Buyer gets NO contracts
             old_qty = buyer_pos.no_quantity
-            old_cost = float(buyer_pos.no_avg_cost)
             new_qty = old_qty + quantity
 
             if new_qty > 0:
-                buyer_pos.no_avg_cost = Decimal(
-                    (old_qty * old_cost + quantity * price) / new_qty
+                buyer_pos.no_avg_cost = (
+                    (Decimal(old_qty) * position.no_avg_cost + Decimal(quantity) * Decimal(price)) / Decimal(new_qty)
                 )
             buyer_pos.no_quantity = new_qty
 
             # Seller loses NO contracts
             seller_pos.no_quantity -= quantity
-            pnl = Decimal(quantity * (price - float(seller_pos.no_avg_cost))) / 100
+            pnl = Decimal(quantity) * (Decimal(price) - seller_pos.no_avg_cost) / 100
             seller_pos.realized_pnl += pnl
 
         buyer_pos.save()

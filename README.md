@@ -106,6 +106,19 @@ python manage.py runserver
 
 Open http://localhost:8000/ in your browser.
 
+
+### 8. Run the Matching Engine (Important!)
+
+The application uses a separate process to match orders. Without this running, orders will sit in the order book but trades won't execute.
+
+Open a **new terminal**, activate your virtual environment, and run:
+
+```bash
+python manage.py run_engine
+```
+
+You should see output indicating the engine is starting and processing trades.
+
 ## URL Structure
 
 | Path | Description |
@@ -129,6 +142,37 @@ For production setups:
 3. Run with Daphne (ASGI) and Gunicorn (WSGI) behind Nginx
 4. Use the included `voy_a_mi.service` systemd file for deployment
 5. Run `python manage.py collectstatic` for static files
+
+
+## Development Workflow
+
+### Merging and Updating
+
+When working on features, follow this standard git workflow to keep your branch up to date and merge changes:
+
+1.  **Fetch latest changes:**
+    ```bash
+    git fetch origin
+    ```
+
+2.  **Merge main into your branch** (to resolve conflicts):
+    ```bash
+    git merge origin/main
+    ```
+
+3.  **Push your changes:**
+    ```bash
+    git push origin your-branch-name
+    ```
+
+4.  **Create a Pull Request** on GitHub to merge into `main`.
+
+### Common Commands
+
+-   **Run Tests:** `python manage.py test`
+-   **Make Migrations:** `python manage.py makemigrations`
+-   **Migrate:** `python manage.py migrate`
+-   **Create Test Markets:** `python manage.py create_test_markets`
 
 ## Contributing
 

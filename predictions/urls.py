@@ -7,6 +7,7 @@ urlpatterns = [
     # Public pages
     path('', views.index, name='index'),
     path('events/', views.event_list, name='event_list'),
+    path('events/<slug:slug>/', views.event_detail, name='event_detail'),
     path('place_order/<int:market_id>/', views.place_order, name='place_order'),
     path('cancel_order/<int:order_id>/', views.cancel_order, name='cancel_order'),
     path('market/<int:market_id>/order_book_json/', views.order_book_json, name='order_book_json'),

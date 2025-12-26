@@ -25,6 +25,9 @@ python manage.py migrate
 # Run development server
 python manage.py runserver
 
+# Run matching engine
+python manage.py run_engine
+
 # Create superuser for admin
 python manage.py createsuperuser
 

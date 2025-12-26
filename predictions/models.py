@@ -323,8 +323,10 @@ class Order(models.Model):
     )
 
     # Price in cents (1-99). For market orders, this is set automatically.
-    price = models.IntegerField(
-        help_text="Price in cents (1-99)"
+    price = models.DecimalField(
+        max_digits=4, decimal_places=2,
+        help_text="Price in dollars (0.01-0.99)",
+        null=True, blank=True
     )
 
     # Quantity
@@ -464,10 +466,10 @@ class Position(models.Model):
     )
 
     # Contract holdings (can be 0 or positive)
-    yes_shares = models.IntegerField(default=0)
-    no_shares = models.IntegerField(default=0)
-    reserved_yes_shares = models.IntegerField(default=0)  # Shares locked in open Sell YES orders
-    reserved_no_shares = models.IntegerField(default=0)   # Shares locked in open Sell NO orders
+    yes_quantity = models.IntegerField(default=0)
+    no_quantity = models.IntegerField(default=0)
+    reserved_yes_quantity = models.IntegerField(default=0)  # Shares locked in open Sell YES orders
+    reserved_no_quantity = models.IntegerField(default=0)   # Shares locked in open Sell NO orders
 
     # Average cost basis in cents (for P&L calculation)
     yes_avg_cost = models.DecimalField(

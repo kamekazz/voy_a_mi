@@ -194,7 +194,7 @@ class MarketAdmin(admin.ModelAdmin):
 
     @admin.action(description='Settle as YES (pay YES holders $1/share)')
     def settle_yes(self, request, queryset):
-        from .matching_engine import settle_market
+        from .engine.matching import settle_market
         settled = 0
         errors = []
         for market in queryset.filter(status=Market.Status.ACTIVE):
@@ -211,7 +211,7 @@ class MarketAdmin(admin.ModelAdmin):
 
     @admin.action(description='Settle as NO (pay NO holders $1/share)')
     def settle_no(self, request, queryset):
-        from .matching_engine import settle_market
+        from .engine.matching import settle_market
         settled = 0
         errors = []
         for market in queryset.filter(status=Market.Status.ACTIVE):
@@ -353,7 +353,7 @@ class PositionAdmin(admin.ModelAdmin):
     def unrealized_pnl(self, obj):
         pnl = obj.total_unrealized_pnl
         color = 'green' if pnl >= 0 else 'red'
-        return format_html('<span style="color: {};">${:.2f}</span>', color, pnl)
+        return format_html('<span style="color: {};">${}</span>', color, f'{pnl:.2f}')
     unrealized_pnl.short_description = 'Unrealized P&L'
 
 
@@ -380,7 +380,7 @@ class TransactionAdmin(admin.ModelAdmin):
     def amount_display(self, obj):
         color = 'green' if obj.amount >= 0 else 'red'
         sign = '+' if obj.amount >= 0 else ''
-        return format_html('<span style="color: {};">{}{:.2f}</span>', color, sign, obj.amount)
+        return format_html('<span style="color: {};">{}{}</span>', color, sign, f'{obj.amount:.2f}')
     amount_display.short_description = 'Amount'
 
     def has_add_permission(self, request):

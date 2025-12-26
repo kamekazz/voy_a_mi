@@ -124,7 +124,7 @@ def broadcast_orderbook_update(market, orderbook=None):
         return
 
     if orderbook is None:
-        from .matching_engine import get_orderbook
+        from .engine.matching import get_orderbook
         orderbook = get_orderbook(market, depth=10)
 
     group_name = f'market_{market.pk}'

@@ -16,7 +16,7 @@ from datetime import timedelta
 from decimal import Decimal
 
 from .models import User, Category, Event, Market, Order, Trade, Position, Transaction
-from .matching_engine import MatchingEngine, get_orderbook
+from .engine.matching import MatchingEngine, get_orderbook
 from .exceptions import (
     InsufficientFundsError,
     InsufficientPositionError,
@@ -471,7 +471,7 @@ class SettlementTest(BaseTestCase):
 
     def test_settle_yes(self):
         """Test settling market as YES."""
-        from .matching_engine import settle_market
+        from .engine.matching import settle_market
 
         stats = settle_market(self.market, 'yes')
 
@@ -497,7 +497,7 @@ class SettlementTest(BaseTestCase):
 
     def test_settle_no(self):
         """Test settling market as NO."""
-        from .matching_engine import settle_market
+        from .engine.matching import settle_market
 
         stats = settle_market(self.market, 'no')
 
@@ -546,7 +546,7 @@ class MintRedeemTest(BaseTestCase):
 
     def test_mint_complete_set(self):
         """Test minting complete sets directly."""
-        from .matching_engine import mint_complete_set
+        from .engine.matching import mint_complete_set
 
         result = mint_complete_set(self.market, self.user1, 5)
 
@@ -572,7 +572,7 @@ class MintRedeemTest(BaseTestCase):
 
     def test_redeem_complete_set(self):
         """Test redeeming complete sets."""
-        from .matching_engine import mint_complete_set, redeem_complete_set
+        from .engine.matching import mint_complete_set, redeem_complete_set
 
         # First mint some sets
         mint_complete_set(self.market, self.user1, 5)
@@ -600,7 +600,7 @@ class MintRedeemTest(BaseTestCase):
 
     def test_redeem_insufficient_position(self):
         """Test redeeming fails without enough contracts."""
-        from .matching_engine import mint_complete_set, redeem_complete_set
+        from .engine.matching import mint_complete_set, redeem_complete_set
 
         # Mint 5 sets
         mint_complete_set(self.market, self.user1, 5)
@@ -611,7 +611,7 @@ class MintRedeemTest(BaseTestCase):
 
     def test_mint_insufficient_funds(self):
         """Test minting fails without enough balance."""
-        from .matching_engine import mint_complete_set
+        from .engine.matching import mint_complete_set
 
         with self.assertRaises(InsufficientFundsError):
             mint_complete_set(self.market, self.user1, 200)  # Would cost $200

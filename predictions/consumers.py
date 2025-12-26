@@ -112,7 +112,7 @@ class MarketConsumer(AsyncJsonWebsocketConsumer):
     def get_market_state(self, market_id):
         """Get current market state for initial WebSocket connection."""
         from .models import Market
-        from .matching_engine import get_orderbook
+        from .engine.matching import get_orderbook
 
         try:
             market = Market.objects.select_related('event').get(pk=market_id)
