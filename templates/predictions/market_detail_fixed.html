@@ -563,14 +563,56 @@
         tbody.innerHTML = html;
     }
 
+    // ====== RECENT TRADES ======
+    function fetchRecentTrades() {
+        fetch('/api/markets/' + marketId + '/trades/')
+            .then(response => response.json())
+            .then(data => {
+                if (data.trades) {
+                    renderTrades(data.trades);
+                }
+            })
+            .catch(err => console.error('Error fetching trades:', err));
+    }
+
+    function renderTrades(trades) {
+        const tbody = document.getElementById('trades-tbody');
+        if (!tbody) return;
+
+        if (!trades || trades.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" style="color:var(--text-tertiary); text-align:center; padding: 24px;">No recent trades</td></tr>';
+            return;
+        }
+
+        let html = '';
+        trades.forEach(trade => {
+            const time = new Date(trade.executed_at);
+            const timeStr = time.toLocaleTimeString('en-US', {hour12: false});
+            const sideClass = trade.side === 'buy' ? 'text-green' : 'text-red';
+
+            html += `<tr>
+                <td>${timeStr}</td>
+                <td style="font-weight:600" class="${sideClass}">${trade.side.toUpperCase()}</td>
+                <td>${trade.avg_price}c</td>
+                <td class="text-end">${trade.quantity}</td>
+            </tr>`;
+        });
+        tbody.innerHTML = html;
+    }
+
     // Poll every 2 seconds
     setInterval(fetchOrderBook, 2000);
+    setInterval(fetchRecentTrades, 5000);
 
     // Initialize
     document.addEventListener('DOMContentLoaded', function () {
         createStatusIndicator();
         connectWebSocket();
         setInterval(sendPing, 30000);
+
+        // Fetch initial data
+        fetchOrderBook();
+        fetchRecentTrades();
 
         // Listeners for Quick Bet
         const quickAmount = document.getElementById('quick_amount');
