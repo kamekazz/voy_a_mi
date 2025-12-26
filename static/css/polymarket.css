@@ -1,24 +1,37 @@
 :root {
-    /* Polymarket Colors */
-    --pm-green: #00A68C;
-    --pm-red: #E63C3C;
-    --pm-blue: #2E90FA;
+    /* Polymarket/Modern Dark Theme Colors */
+    --pm-green: #10B981;
+    --pm-red: #EF4444;
+    --pm-blue: #3B82F6;
 
-    /* Theme Colors */
-    --bg-main: #F5F7FA;
-    --bg-card: #FFFFFF;
-    --text-primary: #111827;
-    --text-secondary: #6B7280;
-    --text-tertiary: #9CA3AF;
-    --border-color: #E5E7EB;
+    /* Dark Theme Backgrounds */
+    --bg-main: #0F172A;
+    /* Slate 900 */
+    --bg-card: #1E293B;
+    /* Slate 800 */
+    --bg-hover: #334155;
+    /* Slate 700 */
+
+    /* Text Colors */
+    --text-primary: #F8FAFC;
+    --text-secondary: #94A3B8;
+    --text-tertiary: #64748B;
+
+    --border-color: #334155;
 
     /* Spacing */
     --nav-height: 64px;
-    --header-height: 60px;
+    --header-height: 64px;
 
     /* Typography */
     --font-heading: 'Inter', -apple-system, sans-serif;
     --font-body: 'Inter', -apple-system, sans-serif;
+
+    /* Shadows & Effects */
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+    --glass-bg: rgba(30, 41, 59, 0.7);
+    --glass-border: rgba(255, 255, 255, 0.1);
 }
 
 /* Reset & Base */
@@ -203,7 +216,7 @@ a {
     height: 48px;
     border-radius: 6px;
     object-fit: cover;
-    background: #eee;
+    background: var(--bg-hover);
     flex-shrink: 0;
 }
 
@@ -294,7 +307,7 @@ a {
 .tab-nav {
     display: flex;
     border-bottom: 1px solid var(--border-color);
-    background: #FAFAFA;
+    background: var(--bg-main);
 }
 
 .tab-btn {
@@ -313,7 +326,7 @@ a {
 .tab-btn.active {
     color: var(--text-primary);
     border-bottom-color: var(--pm-blue);
-    background: white;
+    background: var(--bg-card);
 }
 
 .trade-form {
@@ -379,7 +392,7 @@ a {
 }
 
 .order-summary {
-    background: #FAFAFA;
+    background: var(--bg-main);
     padding: 12px;
     border-radius: 8px;
     margin-bottom: 16px;
@@ -421,11 +434,25 @@ a {
     text-align: right;
 }
 
-.text-yes {
+.text-primary {
+    color: var(--text-primary);
+}
+
+.text-secondary {
+    color: var(--text-secondary);
+}
+
+.text-tertiary {
+    color: var(--text-tertiary);
+}
+
+.text-yes,
+.text-success {
     color: var(--pm-green);
 }
 
-.text-no {
+.text-no,
+.text-danger {
     color: var(--pm-red);
 }
 
@@ -453,6 +480,28 @@ a {
 .mt-4 {
     margin-top: 16px;
 }
+
+.justify-center {
+    justify-content: center;
+}
+
+.flex-column {
+    flex-direction: column;
+}
+
+.text-center {
+    text-align: center;
+}
+
+.py-5 {
+    padding-top: 48px;
+    padding-bottom: 48px;
+}
+
+.mb-3 {
+    margin-bottom: 16px;
+}
+
 
 /* Tags */
 .tags {
@@ -497,12 +546,54 @@ a {
     font-size: 0.95rem;
 }
 
-.outcome-yes {
-    background-color: rgba(0, 166, 140, 0.12);
-    color: var(--pm-green);
-}
-
 .outcome-no {
     background-color: rgba(230, 60, 60, 0.12);
     color: var(--pm-red);
+}
+
+/* Markets Grid Layout */
+.markets-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 16px;
+    padding-bottom: 24px;
+}
+
+.market-card {
+    transition: all 0.2s ease;
+    height: 100%;
+}
+
+.market-card:hover {
+    border-color: var(--text-tertiary);
+    /* Slightly lighter border on hover */
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+}
+
+/* Tag Scrollbar Hiding */
+.tags::-webkit-scrollbar {
+    display: none;
+}
+
+/* Outcome Bar for Card */
+.outcome-bar {
+    display: flex;
+    align-items: center;
+    background: var(--bg-main);
+    border-radius: 6px;
+    overflow: hidden;
+    height: 36px;
+    margin-top: auto;
+    /* Push to bottom */
+}
+
+.outcome-segment {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.85rem;
+    font-weight: 600;
+    height: 100%;
+    padding: 0 12px;
 }
