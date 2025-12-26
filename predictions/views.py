@@ -149,7 +149,7 @@ def market_detail(request, market_id):
         'user_orders': user_orders,
         'order_form': order_form,
     }
-    return render(request, 'predictions/market_detail.html', context)
+    return render(request, 'predictions/market_detail_fixed.html', context)
 
 def order_book_json(request, market_id):
     market = get_object_or_404(Market, pk=market_id)
@@ -169,9 +169,9 @@ def order_book_json(request, market_id):
 
 @login_required
 @require_POST
-def place_order(request, market_id):
+def place_order(request, pk):
     """Place a new order on a market (Order Book only)."""
-    market = get_object_or_404(Market, pk=market_id)
+    market = get_object_or_404(Market, pk=pk)
 
     order_type = request.POST.get('order_type')
     outcome_input = request.POST.get('outcome')

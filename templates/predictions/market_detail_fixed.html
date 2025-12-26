@@ -5,21 +5,21 @@
 {% block content %}
 <!-- Breadcrumb -->
 <div class="mb-2" style="font-size: 0.85rem; color: var(--text-tertiary);">
-    <a href="{% url 'predictions:index' %}">Markets</a> /
+    <a href="{% url 'predictions:index' %}">Markets</a> / 
     <a href="{% url 'predictions:event_detail' event.slug %}">{{ event.title|truncatewords:3 }}</a>
 </div>
 
 <!-- Main Hero -->
 <div class="detail-hero">
     {% if market.display_image %}
-    <img src="{{ market.display_image.url }}" class="hero-thumb" alt="Market">
+        <img src="{{ market.display_image.url }}" class="hero-thumb" alt="Market">
     {% endif %}
     <h1 class="detail-title">{{ market.title }}</h1>
     <div class="market-meta" style="justify-content: center;">
         {% if market.is_trading_active %}
-        <span class="text-green">● Trading Active</span>
+            <span class="text-green">● Trading Active</span>
         {% else %}
-        <span>● {{ market.get_status_display }}</span>
+            <span>● {{ market.get_status_display }}</span>
         {% endif %}
         <span>• Vol: ${{ market.total_volume }}</span>
     </div>
@@ -29,14 +29,12 @@
         <div class="price-block">
             <span class="price-label">YES</span>
             <div class="price-value text-yes" id="yes-price">{{ amm_prices.yes_price }}c</div>
-            <div style="font-size: 0.8rem; color: var(--text-tertiary);"><span id="yes-implied">{{ amm_prices.yes_price
-                    }}</span>%</div>
+            <div style="font-size: 0.8rem; color: var(--text-tertiary);"><span id="yes-implied">{{ amm_prices.yes_price }}</span>%</div>
         </div>
         <div class="price-block">
             <span class="price-label">NO</span>
             <div class="price-value text-no" id="no-price">{{ amm_prices.no_price }}c</div>
-            <div style="font-size: 0.8rem; color: var(--text-tertiary);"><span id="no-implied">{{ amm_prices.no_price
-                    }}</span>%</div>
+            <div style="font-size: 0.8rem; color: var(--text-tertiary);"><span id="no-implied">{{ amm_prices.no_price }}</span>%</div>
         </div>
     </div>
 </div>
@@ -52,8 +50,7 @@
     </div>
     <div style="height: 200px; position: relative;">
         <canvas id="priceChart"></canvas>
-        <div id="chartLoading"
-            style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: var(--text-tertiary);">
+        <div id="chartLoading" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: var(--text-tertiary);">
             Loading...
         </div>
     </div>
@@ -69,94 +66,91 @@
 
     <div class="trade-form">
         {% if user.is_authenticated %}
-        <!-- Quick Bet Form -->
-        <div id="quick-bet-panel">
-            <form method="post" action="{% url 'predictions:place_order' market.pk %}" id="quick-bet-form">
-                {% csrf_token %}
-                <input type="hidden" name="price" value=""> <!-- Blank for market order -->
-
-                <!-- Buy/Sell Toggle (Hidden radio, custom UI) -->
-                <div class="outcome-selector">
-                    <label class="outcome-option selected" id="opt-buy" onclick="setSide('BUY')">Buy</label>
-                    <label class="outcome-option" id="opt-sell" onclick="setSide('SELL')">Sell</label>
-                </div>
-                <!-- Hidden inputs for form -->
-                <input type="radio" name="order_type" id="quick_buy" value="BUY" checked class="d-none">
-                <input type="radio" name="order_type" id="quick_sell" value="SELL" class="d-none">
-
-                <!-- Outcome Toggle -->
-                <div class="outcome-selector">
-                    <label class="outcome-option selected yes" id="opt-yes" onclick="setOutcome('YES')">YES</label>
-                    <label class="outcome-option no" id="opt-no" onclick="setOutcome('NO')">NO</label>
-                </div>
-                <input type="radio" name="outcome" id="quick_type_yes" value="YES" checked class="d-none">
-                <input type="radio" name="outcome" id="quick_type_no" value="NO" class="d-none">
-
-                <!-- Amount Input -->
-                <div class="amount-input-group">
-                    <span class="amount-label" id="amount-prefix">$</span>
-                    <input type="number" class="amount-input" name="quantity" id="quick_amount" value="5" step="any">
-                    <!-- Renamed ID to match JS -->
-                    <span class="amount-label d-none" id="shares-suffix">Shares</span>
-                </div>
-
-                <!-- Summary -->
-                <div class="order-summary">
-                    <div class="summary-row">
-                        <span>Avg Price</span>
-                        <span id="estimate-price">-</span>
+            <!-- Quick Bet Form -->
+            <div id="quick-bet-panel">
+                <form method="post" action="{% url 'predictions:place_order' market.pk %}" id="quick-bet-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="price" value=""> <!-- Blank for market order -->
+                    
+                    <!-- Buy/Sell Toggle (Hidden radio, custom UI) -->
+                    <div class="outcome-selector">
+                        <label class="outcome-option selected" id="opt-buy" onclick="setSide('BUY')">Buy</label>
+                        <label class="outcome-option" id="opt-sell" onclick="setSide('SELL')">Sell</label>
                     </div>
-                    <div class="summary-row">
-                        <span id="estimate-shares-label">Est. Shares</span>
-                        <span id="estimate-shares">-</span>
+                    <!-- Hidden inputs for form -->
+                    <input type="radio" name="order_type" id="quick_buy" value="BUY" checked class="d-none">
+                    <input type="radio" name="order_type" id="quick_sell" value="SELL" class="d-none">
+
+                    <!-- Outcome Toggle -->
+                    <div class="outcome-selector">
+                        <label class="outcome-option selected yes" id="opt-yes" onclick="setOutcome('YES')">YES</label>
+                        <label class="outcome-option no" id="opt-no" onclick="setOutcome('NO')">NO</label>
                     </div>
-                    <div class="summary-row">
-                        <span id="estimate-result-label">Potential Payout</span>
-                        <span id="estimate-payout">-</span>
+                    <input type="radio" name="outcome" id="quick_type_yes" value="YES" checked class="d-none">
+                    <input type="radio" name="outcome" id="quick_type_no" value="NO" class="d-none">
+
+                    <!-- Amount Input -->
+                    <div class="amount-input-group">
+                        <span class="amount-label" id="amount-prefix">$</span>
+                        <input type="number" class="amount-input" name="quantity" id="quick_amount" value="5" step="any"> <!-- Renamed ID to match JS -->
+                        <span class="amount-label d-none" id="shares-suffix">Shares</span>
                     </div>
-                </div>
 
-                <button type="submit" class="btn btn-primary w-100" id="quick-bet-button"
-                    style="font-size: 1.1rem; padding: 14px;">
-                    Place Order
-                </button>
-            </form>
-        </div>
+                    <!-- Summary -->
+                    <div class="order-summary">
+                        <div class="summary-row">
+                            <span>Avg Price</span>
+                            <span id="estimate-price">-</span>
+                        </div>
+                        <div class="summary-row">
+                            <span id="estimate-shares-label">Est. Shares</span>
+                            <span id="estimate-shares">-</span>
+                        </div>
+                        <div class="summary-row">
+                            <span id="estimate-result-label">Potential Payout</span>
+                            <span id="estimate-payout">-</span>
+                        </div>
+                    </div>
 
-        <!-- Limit Order Form (Simplified implementation) -->
-        <div id="limit-order-panel" class="d-none">
-            <form method="post" action="{% url 'predictions:place_order' market.pk %}">
-                {% csrf_token %}
-                <div style="text-align: center; padding: 20px; color: var(--text-secondary);">
-                    Limit orders allow you to set a specific price.
-                </div>
-                <!-- Re-using basic inputs for simplicity in this artifact -->
-                <input type="hidden" name="order_type" value="BUY">
-                <div class="outcome-selector">
-                    <label class="outcome-option selected yes">YES</label>
-                    <label class="outcome-option no">NO</label>
-                </div>
-                <input type="radio" name="outcome" value="YES" checked class="d-none">
+                    <button type="submit" class="btn btn-primary w-100" id="quick-bet-button" style="font-size: 1.1rem; padding: 14px;">
+                        Place Order
+                    </button>
+                </form>
+            </div>
 
-                <div class="amount-input-group">
-                    <span class="amount-label">Price</span>
-                    <input type="number" class="amount-input" name="price" id="price_input" value="0.50" step="0.01"
-                        max="0.99">
-                    <span class="amount-label">cents</span>
-                </div>
-                <div class="amount-input-group">
-                    <span class="amount-label">Qty</span>
-                    <input type="number" class="amount-input" name="quantity" id="quantity_input" value="10">
-                    <span class="amount-label">shares</span>
-                </div>
-                <button type="submit" class="btn btn-outline w-100">Place Limit Order</button>
-            </form>
-        </div>
+            <!-- Limit Order Form (Simplified implementation) -->
+            <div id="limit-order-panel" class="d-none">
+                 <form method="post" action="{% url 'predictions:place_order' market.pk %}">
+                     {% csrf_token %}
+                     <div style="text-align: center; padding: 20px; color: var(--text-secondary);">
+                         Limit orders allow you to set a specific price.
+                     </div>
+                     <!-- Re-using basic inputs for simplicity in this artifact -->
+                     <input type="hidden" name="order_type" value="BUY">
+                     <div class="outcome-selector">
+                        <label class="outcome-option selected yes">YES</label>
+                        <label class="outcome-option no">NO</label>
+                     </div>
+                     <input type="radio" name="outcome" value="YES" checked class="d-none">
+
+                     <div class="amount-input-group">
+                         <span class="amount-label">Price</span>
+                         <input type="number" class="amount-input" name="price" id="price_input" value="0.50" step="0.01" max="0.99"> 
+                         <span class="amount-label">cents</span>
+                     </div>
+                     <div class="amount-input-group">
+                         <span class="amount-label">Qty</span>
+                         <input type="number" class="amount-input" name="quantity" id="quantity_input" value="10"> 
+                         <span class="amount-label">shares</span>
+                     </div>
+                     <button type="submit" class="btn btn-outline w-100">Place Limit Order</button>
+                 </form>
+            </div>
 
         {% else %}
-        <div style="text-align: center; padding: 20px;">
-            <a href="{% url 'login' %}" class="btn btn-primary w-100">Login to Trade</a>
-        </div>
+            <div style="text-align: center; padding: 20px;">
+                <a href="{% url 'login' %}" class="btn btn-primary w-100">Login to Trade</a>
+            </div>
         {% endif %}
     </div>
 </div>
@@ -165,29 +159,24 @@
 <!-- Orderbook Section -->
 <div class="orderbook-section">
     <div class="section-title">Orderbook</div>
-    <div
-        style="background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border-color); overflow: hidden;">
+    <div style="background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border-color); overflow: hidden;">
         <div class="d-flex">
             <div style="flex: 1; border-right: 1px solid var(--border-color);">
-                <div
-                    style="padding: 8px; text-align: center; font-weight: 600; color: var(--pm-green); border-bottom: 1px solid var(--border-color);">
-                    YES</div>
+                <div style="padding: 8px; text-align: center; font-weight: 600; color: var(--pm-green); border-bottom: 1px solid var(--border-color);">YES</div>
                 <!-- YES Bids/Asks -->
-                <table class="orderbook-table">
-                    <tbody id="yes-bids-body">
-                        <!-- JS injected -->
-                    </tbody>
-                </table>
+                 <table class="orderbook-table">
+                     <tbody id="yes-bids-body">
+                         <!-- JS injected -->
+                     </tbody>
+                 </table>
             </div>
             <div style="flex: 1;">
-                <div
-                    style="padding: 8px; text-align: center; font-weight: 600; color: var(--pm-red); border-bottom: 1px solid var(--border-color);">
-                    NO</div>
-                <table class="orderbook-table">
-                    <tbody id="no-bids-body">
-                        <!-- JS injected -->
-                    </tbody>
-                </table>
+                 <div style="padding: 8px; text-align: center; font-weight: 600; color: var(--pm-red); border-bottom: 1px solid var(--border-color);">NO</div>
+                 <table class="orderbook-table">
+                      <tbody id="no-bids-body">
+                          <!-- JS injected -->
+                      </tbody>
+                 </table>
             </div>
         </div>
     </div>
@@ -196,8 +185,7 @@
 <!-- Trades Section -->
 <div class="orderbook-section mb-4">
     <div class="section-title">Recent Trades</div>
-    <div
-        style="background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border-color); overflow-x: auto;">
+    <div style="background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border-color); overflow-x: auto;">
         <table class="orderbook-table">
             <thead>
                 <tr>
@@ -216,47 +204,47 @@
 
 <!-- Extra JS for Tabs (Custom) -->
 <script>
-    function switchTab(tab) {
-        if (tab === 'quick') {
-            document.getElementById('quick-bet-tab').classList.add('active');
-            document.getElementById('limit-order-tab').classList.remove('active');
-            document.getElementById('quick-bet-panel').classList.remove('d-none');
-            document.getElementById('limit-order-panel').classList.add('d-none');
-        } else {
-            document.getElementById('limit-order-tab').classList.add('active');
-            document.getElementById('quick-bet-tab').classList.remove('active');
-            document.getElementById('limit-order-panel').classList.remove('d-none');
-            document.getElementById('quick-bet-panel').classList.add('d-none');
-        }
+function switchTab(tab) {
+    if(tab === 'quick') {
+        document.getElementById('quick-bet-tab').classList.add('active');
+        document.getElementById('limit-order-tab').classList.remove('active');
+        document.getElementById('quick-bet-panel').classList.remove('d-none');
+        document.getElementById('limit-order-panel').classList.add('d-none');
+    } else {
+        document.getElementById('limit-order-tab').classList.add('active');
+        document.getElementById('quick-bet-tab').classList.remove('active');
+        document.getElementById('limit-order-panel').classList.remove('d-none');
+        document.getElementById('quick-bet-panel').classList.add('d-none');
     }
+}
 
-    function setSide(side) {
-        // Update Hidden Radios
-        if (side === 'BUY') {
-            document.getElementById('quick_buy').checked = true;
-            document.getElementById('opt-buy').classList.add('selected');
-            document.getElementById('opt-sell').classList.remove('selected');
-        } else {
-            document.getElementById('quick_sell').checked = true;
-            document.getElementById('opt-sell').classList.add('selected');
-            document.getElementById('opt-buy').classList.remove('selected');
-        }
-        // Trigger existing change event for JS logic
-        document.getElementById('quick_' + side.toLowerCase()).dispatchEvent(new Event('change'));
+function setSide(side) {
+    // Update Hidden Radios
+    if(side === 'BUY') {
+        document.getElementById('quick_buy').checked = true;
+        document.getElementById('opt-buy').classList.add('selected');
+        document.getElementById('opt-sell').classList.remove('selected');
+    } else {
+        document.getElementById('quick_sell').checked = true;
+        document.getElementById('opt-sell').classList.add('selected');
+        document.getElementById('opt-buy').classList.remove('selected');
     }
+    // Trigger existing change event for JS logic
+    document.getElementById('quick_' + side.toLowerCase()).dispatchEvent(new Event('change'));
+}
 
-    function setOutcome(type) {
-        if (type === 'YES') {
-            document.getElementById('quick_type_yes').checked = true;
-            document.getElementById('opt-yes').classList.add('selected');
-            document.getElementById('opt-no').classList.remove('selected');
-        } else {
-            document.getElementById('quick_type_no').checked = true;
-            document.getElementById('opt-no').classList.add('selected');
-            document.getElementById('opt-yes').classList.remove('selected');
-        }
-        document.getElementById('quick_type_' + type.toLowerCase()).dispatchEvent(new Event('change'));
+function setOutcome(type) {
+    if(type === 'YES') {
+        document.getElementById('quick_type_yes').checked = true;
+        document.getElementById('opt-yes').classList.add('selected');
+        document.getElementById('opt-no').classList.remove('selected');
+    } else {
+        document.getElementById('quick_type_no').checked = true;
+        document.getElementById('opt-no').classList.add('selected');
+        document.getElementById('opt-yes').classList.remove('selected');
     }
+    document.getElementById('quick_type_' + type.toLowerCase()).dispatchEvent(new Event('change'));
+}
 </script>
 
 {% endblock %}
@@ -264,47 +252,32 @@
 {% block extra_css %}
 <style>
     /* Clean up flashing animations */
-    .price-up {
-        color: var(--pm-green);
-        transform: scale(1.1);
-        transition: color 0.2s, transform 0.2s;
-    }
-
-    .price-down {
-        color: var(--pm-red);
-        transform: scale(1.1);
-        transition: color 0.2s, transform 0.2s;
-    }
-
-    #priceChart {
-        width: 100% !important;
-        height: 100% !important;
-    }
+    .price-up { color: var(--pm-green); transform: scale(1.1); transition: color 0.2s, transform 0.2s; }
+    .price-down { color: var(--pm-red); transform: scale(1.1); transition: color 0.2s, transform 0.2s; }
+    #priceChart { width: 100% !important; height: 100% !important; }
 </style>
 {% endblock %}
 
 {% block extra_js %}
 <!-- Chart.js for price history -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<script
-    src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
 <script>
-    (function () {
-        'use strict';
+(function() {
+    'use strict';
 
-        // Market ID for WebSocket connection
-        const marketId = {{ market.pk }
-    };
+    // Market ID for WebSocket connection
+    const marketId = {{ market.pk }};
 
     // AMM price data from Django (will be updated by WebSocket)
     const marketPrices = {
-        yesPrice: {{ amm_prices.yes_price|default: 50 }},
-    noPrice: { { amm_prices.no_price |default: 50 } },
-    // Keep orderbook data for limit orders
-    yesAsk: { { market.best_yes_ask |default: "null" } },
-    noAsk: { { market.best_no_ask |default: "null" } },
-    yesBid: { { market.best_yes_bid |default: "null" } },
-    noBid: { { market.best_no_bid |default: "null" } }
+        yesPrice: {{ amm_prices.yes_price|default:50 }},
+        noPrice: {{ amm_prices.no_price|default:50 }},
+        // Keep orderbook data for limit orders
+        yesAsk: {{ market.best_yes_ask|default:"null" }},
+        noAsk: {{ market.best_no_ask|default:"null" }},
+        yesBid: {{ market.best_yes_bid|default:"null" }},
+        noBid: {{ market.best_no_bid|default:"null" }}
     };
 
     // WebSocket connection
@@ -337,17 +310,17 @@
         console.log('Connecting to WebSocket:', wsUrl);
         socket = new WebSocket(wsUrl);
 
-        socket.onopen = function (e) {
+        socket.onopen = function(e) {
             console.log('WebSocket connected');
             reconnectAttempts = 0;
         };
 
-        socket.onmessage = function (e) {
+        socket.onmessage = function(e) {
             const data = JSON.parse(e.data);
             handleMessage(data);
         };
 
-        socket.onclose = function (e) {
+        socket.onclose = function(e) {
             console.log('WebSocket closed');
             if (reconnectAttempts < maxReconnectAttempts) {
                 reconnectAttempts++;
@@ -355,7 +328,7 @@
             }
         };
 
-        socket.onerror = function (e) {
+        socket.onerror = function(e) {
             console.error('WebSocket error:', e);
         };
     }
@@ -404,9 +377,9 @@
                 yesPrice.textContent = newYesPrice + 'c';
                 if (yesImplied) yesImplied.textContent = newYesPrice;
                 marketPrices.lastYes = newYesPrice;
-                if (animate) {
-                    yesPrice.classList.add(newYesPrice > oldYes ? 'price-up' : 'price-down');
-                    setTimeout(() => yesPrice.classList.remove('price-up', 'price-down'), 500);
+                if(animate) {
+                   yesPrice.classList.add(newYesPrice > oldYes ? 'price-up' : 'price-down');
+                   setTimeout(() => yesPrice.classList.remove('price-up', 'price-down'), 500);
                 }
             }
         }
@@ -418,9 +391,9 @@
                 noPrice.textContent = newNoPrice + 'c';
                 if (noImplied) noImplied.textContent = newNoPrice;
                 marketPrices.lastNo = newNoPrice;
-                if (animate) {
-                    noPrice.classList.add(newNoPrice > oldNo ? 'price-up' : 'price-down');
-                    setTimeout(() => noPrice.classList.remove('price-up', 'price-down'), 500);
+                if(animate) {
+                   noPrice.classList.add(newNoPrice > oldNo ? 'price-up' : 'price-down');
+                   setTimeout(() => noPrice.classList.remove('price-up', 'price-down'), 500);
                 }
             }
         }
@@ -438,7 +411,7 @@
         const actionBadgeClass = trade.side === 'buy' ? 'text-green' : 'text-red';
         const typeColor = trade.contract_type === 'yes' ? 'text-green' : 'text-red';
 
-        row.innerHTML = `
+         row.innerHTML = `
             <td>${timeStr}</td>
             <td style="font-weight:600" class="${actionBadgeClass}">${trade.side.toUpperCase()}</td>
             <td>${trade.avg_price}c</td>
@@ -480,18 +453,18 @@
 
         if (isSell) {
             // Sell mode
-            if (amountLabel) amountLabel.classList.add('d-none');
-            if (sharesSuffix) sharesSuffix.classList.remove('d-none');
-            if (amountInput) { amountInput.step = '1'; amountInput.min = '1'; amountInput.value = '10'; }
-            if (estSharesLabel) estSharesLabel.textContent = 'Selling:';
-            if (resultLabel) resultLabel.textContent = 'You Receive:';
+            if(amountLabel) amountLabel.classList.add('d-none');
+            if(sharesSuffix) sharesSuffix.classList.remove('d-none');
+            if(amountInput) { amountInput.step = '1'; amountInput.min = '1'; amountInput.value = '10'; }
+            if(estSharesLabel) estSharesLabel.textContent = 'Selling:';
+            if(resultLabel) resultLabel.textContent = 'You Receive:';
         } else {
             // Buy mode
-            if (amountLabel) amountLabel.classList.remove('d-none');
-            if (sharesSuffix) sharesSuffix.classList.add('d-none');
-            if (amountInput) { amountInput.step = 'any'; amountInput.min = '0.01'; amountInput.value = '5'; }
-            if (estSharesLabel) estSharesLabel.textContent = 'Est. Shares:';
-            if (resultLabel) resultLabel.textContent = 'Potential Payout:';
+            if(amountLabel) amountLabel.classList.remove('d-none');
+            if(sharesSuffix) sharesSuffix.classList.add('d-none');
+            if(amountInput) { amountInput.step = 'any'; amountInput.min = '0.01'; amountInput.value = '5'; }
+            if(estSharesLabel) estSharesLabel.textContent = 'Est. Shares:';
+            if(resultLabel) resultLabel.textContent = 'Potential Payout:';
         }
         updateQuickBetEstimate();
     }
@@ -513,20 +486,20 @@
         const contractLabel = contractType.toUpperCase();
 
         if (isSell) {
-            const shares = parseInt(amountInput.value) || 0;
-            const payout = (shares * price / 100).toFixed(2);
-            if (sharesDisplay) sharesDisplay.textContent = shares + ' shares';
-            if (priceDisplay) priceDisplay.textContent = price + 'c';
-            if (payoutDisplay) payoutDisplay.textContent = '$' + payout;
-            if (betButton) betButton.textContent = 'Sell ' + shares + ' ' + contractLabel;
+             const shares = parseInt(amountInput.value) || 0;
+             const payout = (shares * price / 100).toFixed(2);
+             if(sharesDisplay) sharesDisplay.textContent = shares + ' shares';
+             if(priceDisplay) priceDisplay.textContent = price + 'c';
+             if(payoutDisplay) payoutDisplay.textContent = '$' + payout;
+             if(betButton) betButton.textContent = 'Sell ' + shares + ' ' + contractLabel;
         } else {
-            const amount = parseFloat(amountInput.value) || 0;
-            const shares = Math.floor(amount * 100 / price);
-            const payout = shares; // $1 per share
-            if (sharesDisplay) sharesDisplay.textContent = shares + ' shares';
-            if (priceDisplay) priceDisplay.textContent = price + 'c';
-            if (payoutDisplay) payoutDisplay.textContent = '$' + payout.toFixed(2);
-            if (betButton) betButton.textContent = 'Buy ' + contractLabel;
+             const amount = parseFloat(amountInput.value) || 0;
+             const shares = Math.floor(amount * 100 / price);
+             const payout = shares; // $1 per share
+             if(sharesDisplay) sharesDisplay.textContent = shares + ' shares';
+             if(priceDisplay) priceDisplay.textContent = price + 'c';
+             if(payoutDisplay) payoutDisplay.textContent = '$' + payout.toFixed(2);
+             if(betButton) betButton.textContent = 'Buy ' + contractLabel;
         }
     }
 
@@ -550,7 +523,7 @@
     function renderTableRows(elementId, rows, colorClass) {
         const tbody = document.getElementById(elementId);
         if (!tbody) return;
-
+        
         if (!rows || rows.length === 0) {
             tbody.innerHTML = '<tr><td colspan="2" style="color:var(--text-tertiary); text-align:center;">Empty</td></tr>';
             return;
@@ -570,7 +543,7 @@
     setInterval(fetchOrderBook, 2000);
 
     // Initialize
-    document.addEventListener('DOMContentLoaded', function () {
+    document.addEventListener('DOMContentLoaded', function() {
         createStatusIndicator();
         connectWebSocket();
         setInterval(sendPing, 30000);
@@ -589,12 +562,12 @@
         if (quickSell) quickSell.addEventListener('change', updateBuySellMode);
 
         updateQuickBetEstimate();
-
+        
         // Chart
         setTimeout(initPriceChart, 100);
     });
 
-    window.addEventListener('beforeunload', function () {
+    window.addEventListener('beforeunload', function() {
         if (socket) socket.close();
     });
 
@@ -622,7 +595,7 @@
                     backgroundColor: 'rgba(230, 60, 60, 0.1)',
                     fill: true,
                     tension: 0.1,
-                    pointRadius: 0
+                     pointRadius: 0
                 }]
             },
             options: {
@@ -635,17 +608,17 @@
                 }
             }
         });
-
+        
         loadPriceHistory('24h');
     }
-
+    
     function loadPriceHistory(timeframe) {
-        fetch('/api/markets/' + marketId + '/price-history/?timeframe=' + timeframe)
+         fetch('/api/markets/' + marketId + '/price-history/?timeframe=' + timeframe)
             .then(r => r.json())
             .then(data => {
                 // Populate chart logic similar to original but simplified
                 // ...
-                if (data.price_history && data.price_history.length > 0) {
+                 if (data.price_history && data.price_history.length > 0) {
                     const yesData = data.price_history.map(p => ({ x: new Date(p.time), y: p.yes_price }));
                     const noData = data.price_history.map(p => ({ x: new Date(p.time), y: p.no_price }));
                     priceChart.data.datasets[0].data = yesData;
@@ -655,6 +628,6 @@
             });
     }
 
-}) ();
+})();
 </script>
 {% endblock %}
