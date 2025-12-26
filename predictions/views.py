@@ -263,7 +263,7 @@ def place_quick_bet(request, pk):
     # Validate contract type
     if contract_type not in ['yes', 'no']:
         messages.error(request, "Please select YES or NO.")
-        return redirect('predictions:market_detail', pk=pk)
+        return redirect('predictions:market_detail', market_id=pk)
 
     try:
         # Use Bookmaker AMM for instant execution with vig
@@ -275,11 +275,11 @@ def place_quick_bet(request, pk):
                 quantity = int(request.POST.get('amount', '0'))
             except (ValueError, TypeError):
                 messages.error(request, "Invalid quantity.")
-                return redirect('predictions:market_detail', pk=pk)
+                return redirect('predictions:market_detail', market_id=pk)
 
             if quantity <= 0:
                 messages.error(request, "Quantity must be at least 1 share.")
-                return redirect('predictions:market_detail', pk=pk)
+                return redirect('predictions:market_detail', market_id=pk)
 
             # Execute the sell
             trade = amm.sell(request.user, contract_type, quantity)
@@ -301,22 +301,22 @@ def place_quick_bet(request, pk):
                 amount = Decimal(request.POST.get('amount', '0'))
             except (ValueError, TypeError, InvalidOperation):
                 messages.error(request, "Invalid amount.")
-                return redirect('predictions:market_detail', pk=pk)
+                return redirect('predictions:market_detail', market_id=pk)
 
             if amount <= 0:
                 messages.error(request, "Amount must be greater than $0.")
-                return redirect('predictions:market_detail', pk=pk)
+                return redirect('predictions:market_detail', market_id=pk)
 
             if amount > request.user.available_balance:
                 messages.error(request, f"Insufficient balance. You have ${request.user.available_balance:.2f} available.")
-                return redirect('predictions:market_detail', pk=pk)
+                return redirect('predictions:market_detail', market_id=pk)
 
             # Calculate how many shares the amount buys
             quantity = amm.calculate_shares_for_amount(contract_type, amount)
 
             if quantity < 1:
                 messages.error(request, f"Amount too small to buy any shares.")
-                return redirect('predictions:market_detail', pk=pk)
+                return redirect('predictions:market_detail', market_id=pk)
 
             # Execute the buy
             trade = amm.buy(request.user, contract_type, quantity)
@@ -339,7 +339,7 @@ def place_quick_bet(request, pk):
     except TradingError as e:
         messages.error(request, f"Trading error: {e}")
 
-    return redirect('predictions:market_detail', pk=pk)
+    return redirect('predictions:market_detail', market_id=pk)
 
 
 @login_required
@@ -362,7 +362,7 @@ def place_hybrid_bet(request, pk):
 
     if contract_type not in ['yes', 'no']:
         messages.error(request, "Please select YES or NO.")
-        return redirect('predictions:market_detail', pk=pk)
+        return redirect('predictions:market_detail', market_id=pk)
 
     try:
         amm = BookmakerAMM(market)
@@ -373,11 +373,11 @@ def place_hybrid_bet(request, pk):
                 quantity = int(request.POST.get('amount', '0'))
             except (ValueError, TypeError):
                 messages.error(request, "Invalid quantity.")
-                return redirect('predictions:market_detail', pk=pk)
+                return redirect('predictions:market_detail', market_id=pk)
 
             if quantity <= 0:
                 messages.error(request, "Quantity must be at least 1 share.")
-                return redirect('predictions:market_detail', pk=pk)
+                return redirect('predictions:market_detail', market_id=pk)
 
             trade = amm.sell(request.user, contract_type, quantity)
             yes_price, no_price = amm.get_display_prices()
@@ -389,28 +389,28 @@ def place_hybrid_bet(request, pk):
                 f"at avg {float(trade.avg_price):.1f}c for ${float(trade.total_cost):.2f}. "
                 f"New price: {new_price}c"
             )
-            return redirect('predictions:market_detail', pk=pk)
+            return redirect('predictions:market_detail', market_id=pk)
 
         # BUY: Hybrid system (AMM + Order Book)
         try:
             amount = Decimal(request.POST.get('amount', '0'))
         except (ValueError, TypeError, InvalidOperation):
             messages.error(request, "Invalid amount.")
-            return redirect('predictions:market_detail', pk=pk)
+            return redirect('predictions:market_detail', market_id=pk)
 
         if amount <= 0:
             messages.error(request, "Amount must be greater than $0.")
-            return redirect('predictions:market_detail', pk=pk)
+            return redirect('predictions:market_detail', market_id=pk)
 
         if amount > request.user.available_balance:
             messages.error(request, f"Insufficient balance. You have ${request.user.available_balance:.2f} available.")
-            return redirect('predictions:market_detail', pk=pk)
+            return redirect('predictions:market_detail', market_id=pk)
 
         # Calculate total shares requested
         total_quantity = amm.calculate_shares_for_amount(contract_type, amount)
         if total_quantity < 1:
             messages.error(request, "Amount too small to buy any shares.")
-            return redirect('predictions:market_detail', pk=pk)
+            return redirect('predictions:market_detail', market_id=pk)
 
         # Calculate how much AMM can fill
         max_amm_qty = amm.max_fillable_quantity(contract_type)
@@ -477,7 +477,7 @@ def place_hybrid_bet(request, pk):
     except TradingError as e:
         messages.error(request, f"Trading error: {e}")
 
-    return redirect('predictions:market_detail', pk=pk)
+    return redirect('predictions:market_detail', market_id=pk)
 
 
 @login_required
@@ -530,7 +530,7 @@ def mint_complete_set_view(request, pk):
         quantity = int(request.POST.get('quantity', 0))
     except (ValueError, TypeError):
         messages.error(request, "Invalid quantity.")
-        return redirect('predictions:market_detail', pk=pk)
+        return redirect('predictions:market_detail', market_id=pk)
 
     try:
         result = mint_complete_set(market, request.user, quantity)
@@ -547,7 +547,7 @@ def mint_complete_set_view(request, pk):
     except TradingError as e:
         messages.error(request, f"Error: {e}")
 
-    return redirect('predictions:market_detail', pk=pk)
+    return redirect('predictions:market_detail', market_id=pk)
 
 
 @login_required
@@ -562,7 +562,7 @@ def redeem_complete_set_view(request, pk):
         quantity = int(request.POST.get('quantity', 0))
     except (ValueError, TypeError):
         messages.error(request, "Invalid quantity.")
-        return redirect('predictions:market_detail', pk=pk)
+        return redirect('predictions:market_detail', market_id=pk)
 
     try:
         result = redeem_complete_set(market, request.user, quantity)
@@ -579,7 +579,7 @@ def redeem_complete_set_view(request, pk):
     except TradingError as e:
         messages.error(request, f"Error: {e}")
 
-    return redirect('predictions:market_detail', pk=pk)
+    return redirect('predictions:market_detail', market_id=pk)
 
 
 @login_required

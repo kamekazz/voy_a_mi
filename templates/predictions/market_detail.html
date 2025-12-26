@@ -71,7 +71,7 @@
         {% if user.is_authenticated %}
         <!-- Quick Bet Form -->
         <div id="quick-bet-panel">
-            <form method="post" action="{% url 'predictions:place_order' market.pk %}" id="quick-bet-form">
+            <form method="post" action="{% url 'predictions:place_quick_bet' market.pk %}" id="quick-bet-form">
                 {% csrf_token %}
                 <input type="hidden" name="price" value=""> <!-- Blank for market order -->
 
@@ -81,21 +81,21 @@
                     <label class="outcome-option" id="opt-sell" onclick="setSide('SELL')">Sell</label>
                 </div>
                 <!-- Hidden inputs for form -->
-                <input type="radio" name="order_type" id="quick_buy" value="BUY" checked class="d-none">
-                <input type="radio" name="order_type" id="quick_sell" value="SELL" class="d-none">
+                <input type="radio" name="action" id="quick_buy" value="buy" checked class="d-none">
+                <input type="radio" name="action" id="quick_sell" value="sell" class="d-none">
 
                 <!-- Outcome Toggle -->
                 <div class="outcome-selector">
                     <label class="outcome-option selected yes" id="opt-yes" onclick="setOutcome('YES')">YES</label>
                     <label class="outcome-option no" id="opt-no" onclick="setOutcome('NO')">NO</label>
                 </div>
-                <input type="radio" name="outcome" id="quick_type_yes" value="YES" checked class="d-none">
-                <input type="radio" name="outcome" id="quick_type_no" value="NO" class="d-none">
+                <input type="radio" name="contract_type" id="quick_type_yes" value="yes" checked class="d-none">
+                <input type="radio" name="contract_type" id="quick_type_no" value="no" class="d-none">
 
                 <!-- Amount Input -->
                 <div class="amount-input-group">
                     <span class="amount-label" id="amount-prefix">$</span>
-                    <input type="number" class="amount-input" name="quantity" id="quick_amount" value="5" step="any">
+                    <input type="number" class="amount-input" name="amount" id="quick_amount" value="5" step="any">
                     <!-- Renamed ID to match JS -->
                     <span class="amount-label d-none" id="shares-suffix">Shares</span>
                 </div>
@@ -590,9 +590,6 @@
         });
         tbody.innerHTML = html;
     }
-
-        // Poll every 2 seconds
-        setInterval(fetchOrderBook, 2000);
 
         // ====== RECENT TRADES ======
         function fetchRecentTrades() {
