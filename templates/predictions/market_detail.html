@@ -207,7 +207,7 @@
 
 <!-- Trades Section -->
 <div class="orderbook-section mb-4">
-    <div class="section-title">Recent Trades</div>
+    <div class="section-title">Recent Trades <span style="font-size: 0.7rem; color: var(--text-tertiary);">(Market #{{ market.pk }})</span></div>
     <div
         style="background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border-color); overflow-x: auto;">
         <table class="orderbook-table">
@@ -220,65 +220,50 @@
                 </tr>
             </thead>
             <tbody id="trades-tbody">
-                <!-- JS Injected -->
+                <tr><td colspan="4" style="color:var(--text-tertiary); text-align:center; padding: 24px;">Loading...</td></tr>
             </tbody>
         </table>
     </div>
 </div>
 
-<!-- Extra JS for Tabs (Custom) -->
+<!-- Tab switching functions -->
 <script>
-    // ... existing script functions ...
-    // Note: I will only replace the surrounding block if I can't reach the JS easily with a single replacement.
-    // Actually, I can replace the HTML part and then use another replace for the JS part if needed.
-    // But the instructions say "Update the JS renderTableRows".
-    // I will do the HTML part first. 
-    // Wait, replace_file_content replaces a SINGLE CONTIGUOUS BLOCK.
-    // The HTML and JS are far apart (Lines 176 and 554).
-    // I need to use multi_replace_file_content or two separate calls.
-    // I will use multi_replace_file_content.
-
-
-    <!-- Extra JS for Tabs (Custom) -->
-    <script>
-        function switchTab(tab) {
+    function switchTab(tab) {
         if (tab === 'quick') {
             document.getElementById('quick-bet-tab').classList.add('active');
-        document.getElementById('limit-order-tab').classList.remove('active');
-        document.getElementById('quick-bet-panel').classList.remove('d-none');
-        document.getElementById('limit-order-panel').classList.add('d-none');
+            document.getElementById('limit-order-tab').classList.remove('active');
+            document.getElementById('quick-bet-panel').classList.remove('d-none');
+            document.getElementById('limit-order-panel').classList.add('d-none');
         } else {
             document.getElementById('limit-order-tab').classList.add('active');
-        document.getElementById('quick-bet-tab').classList.remove('active');
-        document.getElementById('limit-order-panel').classList.remove('d-none');
-        document.getElementById('quick-bet-panel').classList.add('d-none');
+            document.getElementById('quick-bet-tab').classList.remove('active');
+            document.getElementById('limit-order-panel').classList.remove('d-none');
+            document.getElementById('quick-bet-panel').classList.add('d-none');
         }
     }
 
-        function setSide(side) {
-        // Update Hidden Radios
+    function setSide(side) {
         if (side === 'BUY') {
             document.getElementById('quick_buy').checked = true;
-        document.getElementById('opt-buy').classList.add('selected');
-        document.getElementById('opt-sell').classList.remove('selected');
+            document.getElementById('opt-buy').classList.add('selected');
+            document.getElementById('opt-sell').classList.remove('selected');
         } else {
             document.getElementById('quick_sell').checked = true;
-        document.getElementById('opt-sell').classList.add('selected');
-        document.getElementById('opt-buy').classList.remove('selected');
+            document.getElementById('opt-sell').classList.add('selected');
+            document.getElementById('opt-buy').classList.remove('selected');
         }
-        // Trigger existing change event for JS logic
         document.getElementById('quick_' + side.toLowerCase()).dispatchEvent(new Event('change'));
     }
 
-        function setOutcome(type) {
+    function setOutcome(type) {
         if (type === 'YES') {
             document.getElementById('quick_type_yes').checked = true;
-        document.getElementById('opt-yes').classList.add('selected');
-        document.getElementById('opt-no').classList.remove('selected');
+            document.getElementById('opt-yes').classList.add('selected');
+            document.getElementById('opt-no').classList.remove('selected');
         } else {
             document.getElementById('quick_type_no').checked = true;
-        document.getElementById('opt-no').classList.add('selected');
-        document.getElementById('opt-yes').classList.remove('selected');
+            document.getElementById('opt-no').classList.add('selected');
+            document.getElementById('opt-yes').classList.remove('selected');
         }
         document.getElementById('quick_type_' + type.toLowerCase()).dispatchEvent(new Event('change'));
     }
@@ -314,22 +299,23 @@
 <script
     src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
 <script>
-        (function () {
-            'use strict';
+console.log('=== SCRIPT STARTING ===');
+(function () {
+    'use strict';
 
-        // Market ID for WebSocket connection
-        const marketId = {{ market.pk }
-        };
+    // Market ID for WebSocket connection
+    const marketId = {{ market.pk }};
+    console.log('Market ID:', marketId);
 
-        // AMM price data from Django (will be updated by WebSocket)
-        const marketPrices = {
-            yesPrice: {{ amm_prices.yes_price |default: 50 }},
-        noPrice: {{ amm_prices.no_price |default: 50 }},
+    // AMM price data from Django (will be updated by WebSocket)
+    const marketPrices = {
+        yesPrice: {{ amm_prices.yes_price|default:50 }},
+        noPrice: {{ amm_prices.no_price|default:50 }},
         // Keep orderbook data for limit orders
-        yesAsk: {{ market.best_yes_ask |default: "null" }},
-        noAsk: {{ market.best_no_ask |default: "null" }},
-        yesBid: {{ market.best_yes_bid |default: "null" }},
-        noBid: {{ market.best_no_bid |default: "null" }}
+        yesAsk: {{ market.best_yes_ask|default:"null" }},
+        noAsk: {{ market.best_no_ask|default:"null" }},
+        yesBid: {{ market.best_yes_bid|default:"null" }},
+        noBid: {{ market.best_no_bid|default:"null" }}
     };
 
         // WebSocket connection
@@ -557,9 +543,16 @@
 
         // ====== ORDER BOOK & POSITION POLLING ======
         function fetchOrderBook() {
+            console.log('Fetching orderbook for market:', marketId);
             fetch('/api/markets/' + marketId + '/orderbook/')
-                .then(response => response.json())
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('HTTP ' + response.status);
+                    }
+                    return response.json();
+                })
                 .then(data => {
+                    console.log('Orderbook data received');
                     if (data.orderbook) {
                         renderOrderBook(data.orderbook);
                     }
@@ -593,14 +586,29 @@
 
         // ====== RECENT TRADES ======
         function fetchRecentTrades() {
+            console.log('Fetching trades for market:', marketId);
             fetch('/api/markets/' + marketId + '/trades/')
-                .then(response => response.json())
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('HTTP ' + response.status);
+                    }
+                    return response.json();
+                })
                 .then(data => {
+                    console.log('Trades data received:', data.trades ? data.trades.length : 0, 'trades');
                     if (data.trades) {
                         renderTrades(data.trades);
+                    } else {
+                        renderTrades([]);
                     }
                 })
-                .catch(err => console.error('Error fetching trades:', err));
+                .catch(err => {
+                    console.error('Error fetching trades:', err);
+                    const tbody = document.getElementById('trades-tbody');
+                    if (tbody) {
+                        tbody.innerHTML = '<tr><td colspan="4" style="color:var(--text-tertiary); text-align:center; padding: 24px;">Failed to load trades</td></tr>';
+                    }
+                });
     }
 
         function renderTrades(trades) {
@@ -630,12 +638,20 @@
 
     // Initialize
     document.addEventListener('DOMContentLoaded', function () {
+        console.log('Market detail page loaded for market:', marketId);
         createStatusIndicator();
     connectWebSocket();
     setInterval(sendPing, 30000);
-        
+
         // Fetch initial data
+        fetchOrderBook();
         fetchRecentTrades();
+
+        // Poll for updates every 5 seconds
+        setInterval(function() {
+            fetchOrderBook();
+            fetchRecentTrades();
+        }, 5000);
 
     // Listeners for Quick Bet
     const quickAmount = document.getElementById('quick_amount');
