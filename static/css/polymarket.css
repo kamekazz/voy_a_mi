@@ -394,6 +394,7 @@ a {
     font-weight: 600;
     width: 100%;
     outline: none;
+    color: var(--text-primary);
 }
 
 .amount-label {
