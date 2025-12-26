@@ -2,9 +2,9 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth import login
 from django.contrib import messages
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.views.decorators.http import require_POST
-from django.db.models import Sum, Q
+from django.db.models import Q, F, Sum
 from django.utils import timezone
 from decimal import Decimal, InvalidOperation
 
@@ -151,38 +151,27 @@ def market_detail(request, pk):
     }
     return render(request, 'predictions/market_detail.html', context)
 
+def order_book_json(request, market_id):
+    market = get_object_or_404(Market, pk=market_id)
+    
+    buy_yes = Order.objects.filter(market=market, order_type='BUY', outcome='YES').values('price').annotate(total=Sum('quantity')).order_by('-price')
+    sell_yes = Order.objects.filter(market=market, order_type='SELL', outcome='YES').values('price').annotate(total=Sum('quantity')).order_by('price')
+    buy_no = Order.objects.filter(market=market, order_type='BUY', outcome='NO').values('price').annotate(total=Sum('quantity')).order_by('-price')
+    sell_no = Order.objects.filter(market=market, order_type='SELL', outcome='NO').values('price').annotate(total=Sum('quantity')).order_by('price')
+    
+    return JsonResponse({
+        'buy_yes': list(buy_yes),
+        'sell_yes': list(sell_yes),
+        'buy_no': list(buy_no),
+        'sell_no': list(sell_no)
+    })
+
 
 @login_required
 @require_POST
 def place_order(request, pk):
     """Place a new order on a market (Order Book only)."""
     market = get_object_or_404(Market, pk=pk)
-
-    # Parse order parameters
-    side = request.POST.get('side')
-    contract_type = request.POST.get('contract_type')
-
-    try:
-        quantity = int(request.POST.get('quantity', 0))
-        price_str = request.POST.get('price', '')
-        price = int(price_str) if price_str and price_str.strip() else None
-    except (ValueError, TypeError):
-        messages.error(request, "Invalid price or quantity.")
-        return redirect('predictions:market_detail', pk=pk)
-
-    # Validate basic inputs
-    if side not in ['buy', 'sell']:
-        messages.error(request, "Invalid order side.")
-        return redirect('predictions:market_detail', pk=pk)
-
-    if contract_type not in ['yes', 'no']:
-        messages.error(request, "Invalid contract type.")
-        return redirect('predictions:market_detail', pk=pk)
-
-    # Price is required for limit orders
-    if not price:
-        messages.error(request, "Price is required for limit orders.")
-        return redirect('predictions:market_detail', pk=pk)
 
     try:
         # Use Order Book matching engine
@@ -465,14 +454,217 @@ def cancel_order(request, pk):
     market_pk = order.market.pk
 
     engine = MatchingEngine(order.market)
+def cancel_order(request, order_id):
+    order = get_object_or_404(Order, pk=order_id, user=request.user)
+    market = order.market
+    
+    # Reverse Reservation
+    user_balance = UserBalance.objects.get(user=request.user)
+    position = Position.objects.get(user=request.user, market=market)
 
-    try:
-        engine.cancel_order(order, request.user)
-        messages.success(request, "Order cancelled successfully.")
-    except TradingError as e:
-        messages.error(request, str(e))
+    if order.order_type == 'BUY':
+        # Refund reserved funds
+        refund_price = order.price if order.price is not None else Decimal('1.00')
+        refund_amount = refund_price * order.quantity
+        
+        user_balance.reserved_balance -= refund_amount
+        user_balance.balance += refund_amount
+        user_balance.save()
+        
+    elif order.order_type == 'SELL':
+        if order.outcome == 'YES':
+            position.reserved_yes_shares -= order.quantity
+            position.yes_shares += order.quantity
+        else:
+            position.reserved_no_shares -= order.quantity
+            position.no_shares += order.quantity
+        position.save()
 
-    return redirect('predictions:market_detail', pk=market_pk)
+    order.delete()
+    return redirect('market_detail', market_id=market.id)
+
+
+def match_orders(market_id):
+    market = Market.objects.get(pk=market_id)
+    matches = True
+    while matches:
+        matches = False
+        
+        # 1. Direct Matching
+        for outcome in ['YES', 'NO']:
+            buy_orders = Order.objects.filter(market=market, order_type='BUY', outcome=outcome).order_by('-price', 'created_at')
+            sell_orders = Order.objects.filter(market=market, order_type='SELL', outcome=outcome).order_by('price', 'created_at')
+
+            if buy_orders.exists() and sell_orders.exists():
+                best_buy = buy_orders.first()
+                best_sell = sell_orders.first()
+                
+                # Market order (price=None) or Limit match
+                buy_price = best_buy.price if best_buy.price is not None else Decimal('1.00')
+                sell_price = best_sell.price if best_sell.price is not None else Decimal('0.00')
+                
+                if buy_price >= sell_price:
+                    quantity = min(best_buy.quantity, best_sell.quantity)
+                    
+                    # Match at Maker's price (Earliest order)
+                    if best_buy.created_at < best_sell.created_at:
+                        price = buy_price
+                    else:
+                        price = sell_price
+                    
+                    matches = True
+                    execute_direct_trade(best_buy, best_sell, quantity, price)
+                    continue
+
+        # 2. Minting (Buy YES + Buy NO)
+        buy_yes = Order.objects.filter(market=market, order_type='BUY', outcome='YES').order_by('-price', 'created_at')
+        buy_no = Order.objects.filter(market=market, order_type='BUY', outcome='NO').order_by('-price', 'created_at')
+        
+        if buy_yes.exists() and buy_no.exists():
+            best_yes = buy_yes.first()
+            best_no = buy_no.first()
+            
+            p_yes = best_yes.price if best_yes.price is not None else Decimal('1.00')
+            p_no = best_no.price if best_no.price is not None else Decimal('1.00')
+            
+            if p_yes + p_no >= Decimal('1.00'):
+                matches = True
+                quantity = min(best_yes.quantity, best_no.quantity)
+                execute_mint(best_yes, best_no, quantity)
+                continue
+
+        # 3. Merging (Sell YES + Sell NO)
+        sell_yes = Order.objects.filter(market=market, order_type='SELL', outcome='YES').order_by('price', 'created_at')
+        sell_no = Order.objects.filter(market=market, order_type='SELL', outcome='NO').order_by('price', 'created_at')
+        
+        if sell_yes.exists() and sell_no.exists():
+            s_yes = sell_yes.first()
+            s_no = sell_no.first()
+            
+            p_yes = s_yes.price if s_yes.price is not None else Decimal('0.00')
+            p_no = s_no.price if s_no.price is not None else Decimal('0.00')
+            
+            if p_yes + p_no <= Decimal('1.00'):
+                matches = True
+                quantity = min(s_yes.quantity, s_no.quantity)
+                execute_merge(s_yes, s_no, quantity)
+                continue
+
+def execute_direct_trade(buy_order, sell_order, quantity, price):
+    # Buyer pays 'price'. Refund diff if reserved > price.
+    buyer_bal = UserBalance.objects.get(user=buy_order.user)
+    buyer_pos, _ = Position.objects.get_or_create(user=buy_order.user, market=buy_order.market)
+    seller_bal = UserBalance.objects.get(user=sell_order.user)
+    seller_pos, _ = Position.objects.get_or_create(user=sell_order.user, market=sell_order.market)
+    
+    cost = price * quantity
+    reserved_cost = (buy_order.price if buy_order.price is not None else Decimal('1.00')) * quantity
+    
+    # Buyer updates
+    buyer_bal.reserved_balance -= reserved_cost
+    buyer_bal.balance += (reserved_cost - cost) # Refund difference
+    buyer_bal.save()
+    if buy_order.outcome == 'YES': buyer_pos.yes_shares += quantity
+    else: buyer_pos.no_shares += quantity
+    buyer_pos.save()
+    
+    # Seller updates
+    seller_bal.balance += cost
+    seller_bal.save()
+    if sell_order.outcome == 'YES': seller_pos.reserved_yes_shares -= quantity
+    else: seller_pos.reserved_no_shares -= quantity
+    seller_pos.save()
+    
+    # Update Orders
+    update_order(buy_order, quantity)
+    update_order(sell_order, quantity)
+    
+    # Log
+    Transaction.objects.create(
+        user=buy_order.user, 
+        market=buy_order.market, 
+        amount=-cost, 
+        description=f"Bought {quantity} {buy_order.outcome} @ {price}"
+    )
+    Transaction.objects.create(
+        user=sell_order.user, 
+        market=sell_order.market, 
+        amount=cost, 
+        description=f"Sold {quantity} {sell_order.outcome} @ {price}"
+    )
+
+def execute_mint(buy_yes, buy_no, quantity):
+    # Both buyers pay their limit price (or we can split $1). 
+    # Logic: Pay Bid. System keeps excess if Sum > 1.
+    cost_yes = (buy_yes.price if buy_yes.price is not None else Decimal('0.50')) * quantity
+    cost_no = (buy_no.price if buy_no.price is not None else Decimal('0.50')) * quantity
+    # If Market Order, price is None. We assumed 1.00 reserved.
+    # If both market, we can charge 0.50 each or 1.00 total.
+    # Logic above uses price or 1.00. If 1.00, user pays 1.00?
+    # Actually if Mint happens, we essentially fill them.
+    # If we charge them their max willingness, it's safe.
+    
+    res_yes = (buy_yes.price if buy_yes.price is not None else Decimal('1.00')) * quantity
+    res_no = (buy_no.price if buy_no.price is not None else Decimal('1.00')) * quantity
+    
+    # Buyer YES
+    b_yes_bal = UserBalance.objects.get(user=buy_yes.user)
+    b_yes_pos, _ = Position.objects.get_or_create(user=buy_yes.user, market=buy_yes.market)
+    b_yes_bal.reserved_balance -= res_yes
+    b_yes_bal.balance += (res_yes - cost_yes) 
+    b_yes_bal.save()
+    b_yes_pos.yes_shares += quantity
+    b_yes_pos.save()
+    
+    # Buyer NO
+    b_no_bal = UserBalance.objects.get(user=buy_no.user)
+    b_no_pos, _ = Position.objects.get_or_create(user=buy_no.user, market=buy_no.market)
+    b_no_bal.reserved_balance -= res_no
+    b_no_bal.balance += (res_no - cost_no)
+    b_no_bal.save()
+    b_no_pos.no_shares += quantity
+    b_no_pos.save()
+    
+    update_order(buy_yes, quantity)
+    update_order(buy_no, quantity)
+    
+    Transaction.objects.create(user=buy_yes.user, market=buy_yes.market, amount=-cost_yes, description=f"Minted/Bought YES {quantity}")
+    Transaction.objects.create(user=buy_no.user, market=buy_no.market, amount=-cost_no, description=f"Minted/Bought NO {quantity}")
+
+def execute_merge(sell_yes, sell_no, quantity):
+    # Release $1.00 * quantity.
+    # Pay sellers their ask.
+    pay_yes = (sell_yes.price if sell_yes.price is not None else Decimal('0.50')) * quantity
+    pay_no = (sell_no.price if sell_no.price is not None else Decimal('0.50')) * quantity
+    
+    # Seller YES
+    s_yes_bal = UserBalance.objects.get(user=sell_yes.user)
+    s_yes_pos, _ = Position.objects.get_or_create(user=sell_yes.user, market=sell_yes.market)
+    s_yes_bal.balance += pay_yes
+    s_yes_bal.save()
+    s_yes_pos.reserved_yes_shares -= quantity
+    s_yes_pos.save()
+    
+    # Seller NO
+    s_no_bal = UserBalance.objects.get(user=sell_no.user)
+    s_no_pos, _ = Position.objects.get_or_create(user=sell_no.user, market=sell_no.market)
+    s_no_bal.balance += pay_no
+    s_no_bal.save()
+    s_no_pos.reserved_no_shares -= quantity
+    s_no_pos.save()
+    
+    update_order(sell_yes, quantity)
+    update_order(sell_no, quantity)
+    
+    Transaction.objects.create(user=sell_yes.user, market=sell_yes.market, amount=pay_yes, description=f"Merged/Sold YES {quantity}")
+    Transaction.objects.create(user=sell_no.user, market=sell_no.market, amount=pay_no, description=f"Merged/Sold NO {quantity}")
+
+def update_order(order, quantity):
+    if order.quantity > quantity:
+        order.quantity -= quantity
+        order.save()
+    else:
+        order.delete()
 
 
 @login_required

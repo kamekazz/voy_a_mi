@@ -438,6 +438,15 @@ class Trade(models.Model):
         return f"{self.quantity} {self.contract_type.upper()} @ {self.price}c"
 
 
+class UserBalance(models.Model):
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    balance = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+    reserved_balance = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))  # Funds locked in open orders
+
+    def __str__(self):
+        return f"{self.user.username}: ${self.balance} (Reserved: ${self.reserved_balance})"
+
+
 class Position(models.Model):
     """
     User's holdings in a specific market.
@@ -455,8 +464,10 @@ class Position(models.Model):
     )
 
     # Contract holdings (can be 0 or positive)
-    yes_quantity = models.IntegerField(default=0)
-    no_quantity = models.IntegerField(default=0)
+    yes_shares = models.IntegerField(default=0)
+    no_shares = models.IntegerField(default=0)
+    reserved_yes_shares = models.IntegerField(default=0)  # Shares locked in open Sell YES orders
+    reserved_no_shares = models.IntegerField(default=0)   # Shares locked in open Sell NO orders
 
     # Average cost basis in cents (for P&L calculation)
     yes_avg_cost = models.DecimalField(
@@ -687,6 +698,7 @@ class AMMTrade(models.Model):
     contract_type = models.CharField(max_length=3, choices=ContractType.choices)
 
     quantity = models.IntegerField(help_text="Number of contracts")
+    price = models.DecimalField(max_digits=3, decimal_places=2, null=True, blank=True) # Null for Market Orders
 
     # Prices in cents (1-99)
     price_before = models.IntegerField(help_text="Price before trade in cents")
