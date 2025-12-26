@@ -29,14 +29,12 @@
         <div class="price-block">
             <span class="price-label">YES</span>
             <div class="price-value text-yes" id="yes-price">{{ amm_prices.yes_price }}c</div>
-            <div style="font-size: 0.8rem; color: var(--text-tertiary);"><span id="yes-implied">{{ amm_prices.yes_price
-                    }}</span>%</div>
+            <div style="font-size: 0.8rem; color: var(--text-tertiary);"><span id="yes-implied">{{ amm_prices.yes_price }}</span>%</div>
         </div>
         <div class="price-block">
             <span class="price-label">NO</span>
             <div class="price-value text-no" id="no-price">{{ amm_prices.no_price }}c</div>
-            <div style="font-size: 0.8rem; color: var(--text-tertiary);"><span id="no-implied">{{ amm_prices.no_price
-                    }}</span>%</div>
+            <div style="font-size: 0.8rem; color: var(--text-tertiary);"><span id="no-implied">{{ amm_prices.no_price }}</span>%</div>
         </div>
     </div>
 </div>
@@ -46,7 +44,7 @@
     <div class="d-flex justify-between items-center mb-2" style="padding: 0 8px;">
         <span style="font-size: 0.85rem; font-weight: 600;">Price History</span>
         <div style="display: flex; gap: 4px;">
-            <button class="btn-outline" style="padding: 2px 8px; font-size: 0.75rem;" data-timeframe="24h">24H</button>
+            <button class="btn-outline active" style="padding: 2px 8px; font-size: 0.75rem;" data-timeframe="24h">24H</button>
             <button class="btn-outline" style="padding: 2px 8px; font-size: 0.75rem;" data-timeframe="all">All</button>
         </div>
     </div>
@@ -293,19 +291,18 @@
         'use strict';
 
         // Market ID for WebSocket connection
-        const marketId = {{ market.pk }
-    };
+        const marketId = {{ market.pk }};
 
     // AMM price data from Django (will be updated by WebSocket)
     const marketPrices = {
-        yesPrice: {{ amm_prices.yes_price|default: 50 }},
-    noPrice: { { amm_prices.no_price |default: 50 } },
-    // Keep orderbook data for limit orders
-    yesAsk: { { market.best_yes_ask |default: "null" } },
-    noAsk: { { market.best_no_ask |default: "null" } },
-    yesBid: { { market.best_yes_bid |default: "null" } },
-    noBid: { { market.best_no_bid |default: "null" } }
-        };
+        yesPrice: {{ amm_prices.yes_price|default:50 }},
+        noPrice: {{ amm_prices.no_price|default:50 }},
+        // Keep orderbook data for limit orders
+        yesAsk: {{ market.best_yes_ask|default:"null" }},
+        noAsk: {{ market.best_no_ask|default:"null" }},
+        yesBid: {{ market.best_yes_bid|default:"null" }},
+        noBid: {{ market.best_no_bid|default:"null" }}
+    };
 
     // WebSocket connection
     let socket = null;
@@ -592,6 +589,22 @@
 
         // Chart
         setTimeout(initPriceChart, 100);
+
+        // Timeframe button handlers
+        document.querySelectorAll('[data-timeframe]').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                var timeframe = this.getAttribute('data-timeframe');
+                // Update active state
+                document.querySelectorAll('[data-timeframe]').forEach(function(b) {
+                    b.classList.remove('active');
+                });
+                this.classList.add('active');
+                // Show loading and fetch new data
+                var loader = document.getElementById('chartLoading');
+                if (loader) loader.style.display = 'block';
+                loadPriceHistory(timeframe);
+            });
+        });
     });
 
     window.addEventListener('beforeunload', function () {
