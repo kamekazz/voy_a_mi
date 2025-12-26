@@ -5,8 +5,22 @@
 {% block content %}
 <div class="row mb-4">
     <div class="col">
-        <h1><i class="bi bi-arrow-left-right"></i> Trade History</h1>
+        <h1>Profile & History</h1>
     </div>
+</div>
+
+<div class="mb-4">
+    <ul class="nav nav-tabs">
+        <li class="nav-item">
+            <a class="nav-link" href="{% url 'predictions:order_history' %}">Orders</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link active" href="{% url 'predictions:trade_history' %}">Trades</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" href="{% url 'predictions:transactions' %}">Transactions</a>
+        </li>
+    </ul>
 </div>
 
 <!-- Trades Table -->
@@ -43,7 +57,8 @@
                         {% endif %}
                     </td>
                     <td>
-                        <span class="badge {% if trade.contract_type == 'yes' %}bg-success{% else %}bg-danger{% endif %}">
+                        <span
+                            class="badge {% if trade.contract_type == 'yes' %}bg-success{% else %}bg-danger{% endif %}">
                             {{ trade.contract_type|upper }}
                         </span>
                     </td>

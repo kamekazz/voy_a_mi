@@ -788,58 +788,84 @@ def api_price_history(request, pk):
     # Parse timeframe parameter
     timeframe = request.GET.get('timeframe', '24h')
     now = timezone.now()
-
+    
+    # Determine the cutoff time
     if timeframe == '1h':
-        since = now - timedelta(hours=1)
+        cutoff = now - timedelta(hours=1)
     elif timeframe == '24h':
-        since = now - timedelta(hours=24)
+        cutoff = now - timedelta(hours=24)
     elif timeframe == '7d':
-        since = now - timedelta(days=7)
+        cutoff = now - timedelta(days=7)
     else:  # 'all'
-        since = None
+        cutoff = market.created_at
 
-    # Get AMM trades ordered by time
-    queryset = AMMTrade.objects.filter(pool__market=market)
-    if since:
-        queryset = queryset.filter(executed_at__gte=since)
+    # The actual start time for the chart is the later of cutoff or market creation
+    start_time = max(cutoff, market.created_at)
 
-    trades = queryset.order_by('executed_at').values(
-        'executed_at', 'price_after', 'contract_type', 'side'
+    # Determine starting price
+    # 1. If start_time is market creation, it's 50/50
+    # 2. Otherwise, find the last trade BEFORE cutoff to get the opening state
+    start_yes = 50
+    start_no = 50
+
+    if start_time > market.created_at: # We are looking at a window (e.g. last 24h) of an older market
+        last_trade_before = AMMTrade.objects.filter(
+            pool__market=market,
+            executed_at__lt=start_time
+        ).order_by('-executed_at').first()
+
+        if last_trade_before:
+            if last_trade_before.contract_type == 'yes':
+                start_yes = last_trade_before.price_after
+                start_no = 100 - last_trade_before.price_after
+            else:
+                start_no = last_trade_before.price_after
+                start_yes = 100 - last_trade_before.price_after
+
+    # Get trades within the window
+    trades = AMMTrade.objects.filter(
+        pool__market=market,
+        executed_at__gte=start_time
+    ).order_by('executed_at').values(
+        'executed_at', 'price_after', 'contract_type'
     )
 
     # Build price history
     price_history = []
 
-    # Add initial price point (50/50)
-    if trades:
-        first_trade = trades[0]
-        price_history.append({
-            'time': (first_trade['executed_at'].timestamp() - 1) * 1000,  # 1 second before first trade
-            'yes_price': 50,
-            'no_price': 50,
-        })
-
-    # Add each trade's resulting price
-    for trade in trades:
-        yes_price = trade['price_after']
-        no_price = 100 - trade['price_after']
-
-        # If this was a NO trade, the price_after is for NO, so flip it
-        if trade['contract_type'] == 'no':
-            no_price = trade['price_after']
-            yes_price = 100 - trade['price_after']
-
-        price_history.append({
-            'time': trade['executed_at'].timestamp() * 1000,  # JavaScript timestamp
-            'yes_price': yes_price,
-            'no_price': no_price,
-        })
-
-    # Add current price as final point
+    # Add start point
     price_history.append({
-        'time': timezone.now().timestamp() * 1000,
-        'yes_price': market.last_yes_price,
-        'no_price': market.last_no_price,
+        'time': start_time.timestamp() * 1000,
+        'yes_price': start_yes,
+        'no_price': start_no,
+    })
+
+    # Add each trade
+    current_yes = start_yes
+    current_no = start_no
+
+    for trade in trades:
+        # Determine new prices
+        if trade['contract_type'] == 'yes':
+            p_yes = trade['price_after']
+            p_no = 100 - trade['price_after']
+        else:
+            p_no = trade['price_after']
+            p_yes = 100 - trade['price_after']
+        
+        price_history.append({
+            'time': trade['executed_at'].timestamp() * 1000,
+            'yes_price': p_yes,
+            'no_price': p_no,
+        })
+        current_yes = p_yes
+        current_no = p_no
+
+    # Add current point (now) to ensure line goes to the edge
+    price_history.append({
+        'time': now.timestamp() * 1000,
+        'yes_price': current_yes, # Use tracked current in loop to be consistent with history
+        'no_price': current_no,
     })
 
     return JsonResponse({

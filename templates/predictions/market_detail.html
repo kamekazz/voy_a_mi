@@ -708,8 +708,9 @@
         fetch('/api/markets/' + marketId + '/price-history/?timeframe=' + timeframe)
             .then(r => r.json())
             .then(data => {
-                // Populate chart logic similar to original but simplified
-                // ...
+                const loader = document.getElementById('chartLoading');
+                if (loader) loader.style.display = 'none';
+
                 if (data.price_history && data.price_history.length > 0) {
                     const yesData = data.price_history.map(p => ({ x: new Date(p.time), y: p.yes_price }));
                     const noData = data.price_history.map(p => ({ x: new Date(p.time), y: p.no_price }));
@@ -717,6 +718,11 @@
                     priceChart.data.datasets[1].data = noData;
                     priceChart.update();
                 }
+            })
+            .catch(err => {
+                console.error(err);
+                const loader = document.getElementById('chartLoading');
+                if (loader) loader.textContent = 'Error';
             });
     }
 

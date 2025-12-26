@@ -5,8 +5,22 @@
 {% block content %}
 <div class="row mb-4">
     <div class="col">
-        <h1><i class="bi bi-list-check"></i> Order History</h1>
+        <h1>Profile & History</h1>
     </div>
+</div>
+
+<div class="mb-4">
+    <ul class="nav nav-tabs">
+        <li class="nav-item">
+            <a class="nav-link active" href="{% url 'predictions:order_history' %}">Orders</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" href="{% url 'predictions:trade_history' %}">Trades</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" href="{% url 'predictions:transactions' %}">Transactions</a>
+        </li>
+    </ul>
 </div>
 
 <!-- Filters -->
@@ -17,10 +31,12 @@
                 <label class="form-label">Status</label>
                 <select name="status" class="form-select" onchange="this.form.submit()">
                     <option value="">All Statuses</option>
-                    <option value="open" {% if selected_status == 'open' %}selected{% endif %}>Open</option>
-                    <option value="partial" {% if selected_status == 'partial' %}selected{% endif %}>Partially Filled</option>
-                    <option value="filled" {% if selected_status == 'filled' %}selected{% endif %}>Filled</option>
-                    <option value="cancelled" {% if selected_status == 'cancelled' %}selected{% endif %}>Cancelled</option>
+                    <option value="open" {% if selected_status=='open' %}selected{% endif %}>Open</option>
+                    <option value="partial" {% if selected_status=='partial' %}selected{% endif %}>Partially Filled
+                    </option>
+                    <option value="filled" {% if selected_status=='filled' %}selected{% endif %}>Filled</option>
+                    <option value="cancelled" {% if selected_status=='cancelled' %}selected{% endif %}>Cancelled
+                    </option>
                 </select>
             </div>
         </form>
@@ -60,7 +76,8 @@
                         </span>
                     </td>
                     <td>
-                        <span class="badge {% if order.contract_type == 'yes' %}bg-success{% else %}bg-danger{% endif %}">
+                        <span
+                            class="badge {% if order.contract_type == 'yes' %}bg-success{% else %}bg-danger{% endif %}">
                             {{ order.contract_type|upper }}
                         </span>
                     </td>
@@ -84,7 +101,8 @@
                         {% if order.is_active %}
                         <form method="post" action="{% url 'predictions:cancel_order' order.pk %}" class="d-inline">
                             {% csrf_token %}
-                            <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Cancel this order?')">
+                            <button type="submit" class="btn btn-sm btn-outline-danger"
+                                onclick="return confirm('Cancel this order?')">
                                 Cancel
                             </button>
                         </form>
