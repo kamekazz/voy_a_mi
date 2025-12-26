@@ -526,7 +526,7 @@ a {
 
 .tag.active {
     background: var(--text-primary);
-    color: white;
+    color: var(--bg-main);
     border-color: var(--text-primary);
 }
 
@@ -544,6 +544,11 @@ a {
     border-radius: 6px;
     font-weight: 600;
     font-size: 0.95rem;
+}
+
+.outcome-yes {
+    background-color: rgba(16, 185, 129, 0.12);
+    color: var(--pm-green);
 }
 
 .outcome-no {
