@@ -174,6 +174,12 @@
                     YES</div>
                 <!-- YES Bids/Asks -->
                 <table class="orderbook-table">
+                    <thead>
+                        <tr>
+                            <th style="padding-left: 12px;">Price</th>
+                            <th class="text-end" style="padding-right: 12px;">Qty</th>
+                        </tr>
+                    </thead>
                     <tbody id="yes-bids-body">
                         <!-- JS injected -->
                     </tbody>
@@ -184,6 +190,12 @@
                     style="padding: 8px; text-align: center; font-weight: 600; color: var(--pm-red); border-bottom: 1px solid var(--border-color);">
                     NO</div>
                 <table class="orderbook-table">
+                    <thead>
+                        <tr>
+                            <th style="padding-left: 12px;">Price</th>
+                            <th class="text-end" style="padding-right: 12px;">Qty</th>
+                        </tr>
+                    </thead>
                     <tbody id="no-bids-body">
                         <!-- JS injected -->
                     </tbody>
@@ -216,44 +228,57 @@
 
 <!-- Extra JS for Tabs (Custom) -->
 <script>
-    function switchTab(tab) {
+    // ... existing script functions ...
+    // Note: I will only replace the surrounding block if I can't reach the JS easily with a single replacement.
+    // Actually, I can replace the HTML part and then use another replace for the JS part if needed.
+    // But the instructions say "Update the JS renderTableRows".
+    // I will do the HTML part first. 
+    // Wait, replace_file_content replaces a SINGLE CONTIGUOUS BLOCK.
+    // The HTML and JS are far apart (Lines 176 and 554).
+    // I need to use multi_replace_file_content or two separate calls.
+    // I will use multi_replace_file_content.
+
+
+    <!-- Extra JS for Tabs (Custom) -->
+    <script>
+        function switchTab(tab) {
         if (tab === 'quick') {
             document.getElementById('quick-bet-tab').classList.add('active');
-            document.getElementById('limit-order-tab').classList.remove('active');
-            document.getElementById('quick-bet-panel').classList.remove('d-none');
-            document.getElementById('limit-order-panel').classList.add('d-none');
+        document.getElementById('limit-order-tab').classList.remove('active');
+        document.getElementById('quick-bet-panel').classList.remove('d-none');
+        document.getElementById('limit-order-panel').classList.add('d-none');
         } else {
             document.getElementById('limit-order-tab').classList.add('active');
-            document.getElementById('quick-bet-tab').classList.remove('active');
-            document.getElementById('limit-order-panel').classList.remove('d-none');
-            document.getElementById('quick-bet-panel').classList.add('d-none');
+        document.getElementById('quick-bet-tab').classList.remove('active');
+        document.getElementById('limit-order-panel').classList.remove('d-none');
+        document.getElementById('quick-bet-panel').classList.add('d-none');
         }
     }
 
-    function setSide(side) {
+        function setSide(side) {
         // Update Hidden Radios
         if (side === 'BUY') {
             document.getElementById('quick_buy').checked = true;
-            document.getElementById('opt-buy').classList.add('selected');
-            document.getElementById('opt-sell').classList.remove('selected');
+        document.getElementById('opt-buy').classList.add('selected');
+        document.getElementById('opt-sell').classList.remove('selected');
         } else {
             document.getElementById('quick_sell').checked = true;
-            document.getElementById('opt-sell').classList.add('selected');
-            document.getElementById('opt-buy').classList.remove('selected');
+        document.getElementById('opt-sell').classList.add('selected');
+        document.getElementById('opt-buy').classList.remove('selected');
         }
         // Trigger existing change event for JS logic
         document.getElementById('quick_' + side.toLowerCase()).dispatchEvent(new Event('change'));
     }
 
-    function setOutcome(type) {
+        function setOutcome(type) {
         if (type === 'YES') {
             document.getElementById('quick_type_yes').checked = true;
-            document.getElementById('opt-yes').classList.add('selected');
-            document.getElementById('opt-no').classList.remove('selected');
+        document.getElementById('opt-yes').classList.add('selected');
+        document.getElementById('opt-no').classList.remove('selected');
         } else {
             document.getElementById('quick_type_no').checked = true;
-            document.getElementById('opt-no').classList.add('selected');
-            document.getElementById('opt-yes').classList.remove('selected');
+        document.getElementById('opt-no').classList.add('selected');
+        document.getElementById('opt-yes').classList.remove('selected');
         }
         document.getElementById('quick_type_' + type.toLowerCase()).dispatchEvent(new Event('change'));
     }
@@ -289,32 +314,32 @@
 <script
     src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
 <script>
-    (function () {
-        'use strict';
+        (function () {
+            'use strict';
 
         // Market ID for WebSocket connection
         const marketId = {{ market.pk }
+        };
+
+        // AMM price data from Django (will be updated by WebSocket)
+        const marketPrices = {
+            yesPrice: {{ amm_prices.yes_price |default: 50 }},
+        noPrice: {{ amm_prices.no_price |default: 50 }},
+        // Keep orderbook data for limit orders
+        yesAsk: {{ market.best_yes_ask |default: "null" }},
+        noAsk: {{ market.best_no_ask |default: "null" }},
+        yesBid: {{ market.best_yes_bid |default: "null" }},
+        noBid: {{ market.best_no_bid |default: "null" }}
     };
 
-    // AMM price data from Django (will be updated by WebSocket)
-    const marketPrices = {
-        yesPrice: {{ amm_prices.yes_price|default: 50 }},
-    noPrice: { { amm_prices.no_price |default: 50 } },
-    // Keep orderbook data for limit orders
-    yesAsk: { { market.best_yes_ask |default: "null" } },
-    noAsk: { { market.best_no_ask |default: "null" } },
-    yesBid: { { market.best_yes_bid |default: "null" } },
-    noBid: { { market.best_no_bid |default: "null" } }
-    };
+        // WebSocket connection
+        let socket = null;
+        let reconnectAttempts = 0;
+        const maxReconnectAttempts = 10;
+        const reconnectDelay = 2000;
 
-    // WebSocket connection
-    let socket = null;
-    let reconnectAttempts = 0;
-    const maxReconnectAttempts = 10;
-    const reconnectDelay = 2000;
-
-    // Create connection status indicator
-    function createStatusIndicator() {
+        // Create connection status indicator
+        function createStatusIndicator() {
         const indicator = document.createElement('div');
         indicator.id = 'ws-status';
         indicator.className = 'ws-status connecting';
@@ -324,13 +349,13 @@
         return indicator;
     }
 
-    // Update status indicator
-    function updateStatus(status, text) {
-        // console.log(status, text); // simplified handling
-    }
+        // Update status indicator
+        function updateStatus(status, text) {
+            // console.log(status, text); // simplified handling
+        }
 
     // Connect to WebSocket
-    function connectWebSocket() {
+        function connectWebSocket() {
         const wsScheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
         const wsUrl = wsScheme + '://' + window.location.host + '/ws/market/' + marketId + '/';
 
@@ -339,19 +364,19 @@
 
         socket.onopen = function (e) {
             console.log('WebSocket connected');
-            reconnectAttempts = 0;
+        reconnectAttempts = 0;
         };
 
         socket.onmessage = function (e) {
             const data = JSON.parse(e.data);
-            handleMessage(data);
+        handleMessage(data);
         };
 
         socket.onclose = function (e) {
             console.log('WebSocket closed');
-            if (reconnectAttempts < maxReconnectAttempts) {
-                reconnectAttempts++;
-                setTimeout(connectWebSocket, reconnectDelay * reconnectAttempts);
+        if (reconnectAttempts < maxReconnectAttempts) {
+            reconnectAttempts++;
+        setTimeout(connectWebSocket, reconnectDelay * reconnectAttempts);
             }
         };
 
@@ -360,38 +385,38 @@
         };
     }
 
-    // Handle incoming WebSocket messages
-    function handleMessage(message) {
+        // Handle incoming WebSocket messages
+        function handleMessage(message) {
         const type = message.type;
         const data = message.data || message;  // Handle both nested and flat formats
 
         switch (type) {
             case 'initial_state':
-                updatePrices(data.last_yes_price, data.last_no_price, false);
-                marketPrices.yesPrice = data.last_yes_price || 50;
-                marketPrices.noPrice = data.last_no_price || 50;
-                updateQuickBetEstimate();
-                break;
+        updatePrices(data.last_yes_price, data.last_no_price, false);
+        marketPrices.yesPrice = data.last_yes_price || 50;
+        marketPrices.noPrice = data.last_no_price || 50;
+        updateQuickBetEstimate();
+        break;
 
-            case 'market_update':
-                updatePrices(data.last_yes_price, data.last_no_price, true);
-                marketPrices.yesPrice = data.last_yes_price || marketPrices.yesPrice;
-                marketPrices.noPrice = data.last_no_price || marketPrices.noPrice;
-                updateQuickBetEstimate();
-                break;
+        case 'market_update':
+        updatePrices(data.last_yes_price, data.last_no_price, true);
+        marketPrices.yesPrice = data.last_yes_price || marketPrices.yesPrice;
+        marketPrices.noPrice = data.last_no_price || marketPrices.noPrice;
+        updateQuickBetEstimate();
+        break;
 
-            case 'trade_executed':
-                addTradeToTable(data);
-                break;
+        case 'trade_executed':
+        addTradeToTable(data);
+        break;
 
-            case 'orderbook_update':
-                // console.log('Orderbook updated:', data);
-                break;
+        case 'orderbook_update':
+        // console.log('Orderbook updated:', data);
+        break;
         }
     }
 
-    // Update price displays with animation
-    function updatePrices(newYesPrice, newNoPrice, animate) {
+        // Update price displays with animation
+        function updatePrices(newYesPrice, newNoPrice, animate) {
         const yesPrice = document.getElementById('yes-price');
         const noPrice = document.getElementById('no-price');
         const yesImplied = document.getElementById('yes-implied');
@@ -400,12 +425,12 @@
         // Update YES price
         if (yesPrice && newYesPrice !== undefined) {
             const oldYes = marketPrices.lastYes || marketPrices.yesPrice;
-            if (newYesPrice !== oldYes) {
-                yesPrice.textContent = newYesPrice + 'c';
-                if (yesImplied) yesImplied.textContent = newYesPrice;
-                marketPrices.lastYes = newYesPrice;
-                if (animate) {
-                    yesPrice.classList.add(newYesPrice > oldYes ? 'price-up' : 'price-down');
+        if (newYesPrice !== oldYes) {
+            yesPrice.textContent = newYesPrice + 'c';
+        if (yesImplied) yesImplied.textContent = newYesPrice;
+        marketPrices.lastYes = newYesPrice;
+        if (animate) {
+            yesPrice.classList.add(newYesPrice > oldYes ? 'price-up' : 'price-down');
                     setTimeout(() => yesPrice.classList.remove('price-up', 'price-down'), 500);
                 }
             }
@@ -414,50 +439,50 @@
         // Update NO price
         if (noPrice && newNoPrice !== undefined) {
             const oldNo = marketPrices.lastNo || marketPrices.noPrice;
-            if (newNoPrice !== oldNo) {
-                noPrice.textContent = newNoPrice + 'c';
-                if (noImplied) noImplied.textContent = newNoPrice;
-                marketPrices.lastNo = newNoPrice;
-                if (animate) {
-                    noPrice.classList.add(newNoPrice > oldNo ? 'price-up' : 'price-down');
+        if (newNoPrice !== oldNo) {
+            noPrice.textContent = newNoPrice + 'c';
+        if (noImplied) noImplied.textContent = newNoPrice;
+        marketPrices.lastNo = newNoPrice;
+        if (animate) {
+            noPrice.classList.add(newNoPrice > oldNo ? 'price-up' : 'price-down');
                     setTimeout(() => noPrice.classList.remove('price-up', 'price-down'), 500);
                 }
             }
         }
     }
 
-    // Add new AMM trade to the trades table
-    function addTradeToTable(trade) {
+        // Add new AMM trade to the trades table
+        function addTradeToTable(trade) {
         const tbody = document.getElementById('trades-tbody');
         if (!tbody) return;
 
         const row = document.createElement('tr');
         const time = new Date(trade.executed_at);
-        const timeStr = time.toLocaleTimeString('en-US', { hour12: false });
+        const timeStr = time.toLocaleTimeString('en-US', {hour12: false });
         // Simplified Logic for Artifact
         const actionBadgeClass = trade.side === 'buy' ? 'text-green' : 'text-red';
         const typeColor = trade.contract_type === 'yes' ? 'text-green' : 'text-red';
 
         row.innerHTML = `
-            <td>${timeStr}</td>
-            <td style="font-weight:600" class="${actionBadgeClass}">${trade.side.toUpperCase()}</td>
-            <td>${trade.avg_price}c</td>
-            <td class="text-end">${trade.quantity}</td>
+        <td>${timeStr}</td>
+        <td style="font-weight:600" class="${actionBadgeClass}">${trade.side.toUpperCase()}</td>
+        <td>${trade.avg_price}c</td>
+        <td class="text-end">${trade.quantity}</td>
         `;
 
         tbody.insertBefore(row, tbody.firstChild);
         if (tbody.children.length > 20) tbody.removeChild(tbody.lastChild);
     }
 
-    // Send ping to keep connection alive
-    function sendPing() {
+        // Send ping to keep connection alive
+        function sendPing() {
         if (socket && socket.readyState === WebSocket.OPEN) {
             socket.send(JSON.stringify({ type: 'ping' }));
         }
     }
 
-    // Get AMM market price for a contract type
-    function getMarketPrice(contractType) {
+        // Get AMM market price for a contract type
+        function getMarketPrice(contractType) {
         if (contractType === 'yes') {
             return marketPrices.yesPrice || 50;
         } else {
@@ -465,12 +490,12 @@
         }
     }
 
-    function isSellMode() {
+        function isSellMode() {
         const sellRadio = document.getElementById('quick_sell');
         return sellRadio && sellRadio.checked;
     }
 
-    function updateBuySellMode() {
+        function updateBuySellMode() {
         const isSell = isSellMode();
         const amountLabel = document.getElementById('amount-prefix');
         const sharesSuffix = document.getElementById('shares-suffix');
@@ -481,23 +506,23 @@
         if (isSell) {
             // Sell mode
             if (amountLabel) amountLabel.classList.add('d-none');
-            if (sharesSuffix) sharesSuffix.classList.remove('d-none');
-            if (amountInput) { amountInput.step = '1'; amountInput.min = '1'; amountInput.value = '10'; }
-            if (estSharesLabel) estSharesLabel.textContent = 'Selling:';
-            if (resultLabel) resultLabel.textContent = 'You Receive:';
+        if (sharesSuffix) sharesSuffix.classList.remove('d-none');
+        if (amountInput) {amountInput.step = '1'; amountInput.min = '1'; amountInput.value = '10'; }
+        if (estSharesLabel) estSharesLabel.textContent = 'Selling:';
+        if (resultLabel) resultLabel.textContent = 'You Receive:';
         } else {
             // Buy mode
             if (amountLabel) amountLabel.classList.remove('d-none');
-            if (sharesSuffix) sharesSuffix.classList.add('d-none');
-            if (amountInput) { amountInput.step = 'any'; amountInput.min = '0.01'; amountInput.value = '5'; }
-            if (estSharesLabel) estSharesLabel.textContent = 'Est. Shares:';
-            if (resultLabel) resultLabel.textContent = 'Potential Payout:';
+        if (sharesSuffix) sharesSuffix.classList.add('d-none');
+        if (amountInput) {amountInput.step = 'any'; amountInput.min = '0.01'; amountInput.value = '5'; }
+        if (estSharesLabel) estSharesLabel.textContent = 'Est. Shares:';
+        if (resultLabel) resultLabel.textContent = 'Potential Payout:';
         }
         updateQuickBetEstimate();
     }
 
-    // Update Quick Bet estimates
-    function updateQuickBetEstimate() {
+        // Update Quick Bet estimates
+        function updateQuickBetEstimate() {
         const amountInput = document.getElementById('quick_amount');
         const yesRadio = document.getElementById('quick_type_yes');
         const sharesDisplay = document.getElementById('estimate-shares');
@@ -514,46 +539,46 @@
 
         if (isSell) {
             const shares = parseInt(amountInput.value) || 0;
-            const payout = (shares * price / 100).toFixed(2);
-            if (sharesDisplay) sharesDisplay.textContent = shares + ' shares';
-            if (priceDisplay) priceDisplay.textContent = price + 'c';
-            if (payoutDisplay) payoutDisplay.textContent = '$' + payout;
-            if (betButton) betButton.textContent = 'Sell ' + shares + ' ' + contractLabel;
+        const payout = (shares * price / 100).toFixed(2);
+        if (sharesDisplay) sharesDisplay.textContent = shares + ' shares';
+        if (priceDisplay) priceDisplay.textContent = price + 'c';
+        if (payoutDisplay) payoutDisplay.textContent = '$' + payout;
+        if (betButton) betButton.textContent = 'Sell ' + shares + ' ' + contractLabel;
         } else {
             const amount = parseFloat(amountInput.value) || 0;
-            const shares = Math.floor(amount * 100 / price);
-            const payout = shares; // $1 per share
-            if (sharesDisplay) sharesDisplay.textContent = shares + ' shares';
-            if (priceDisplay) priceDisplay.textContent = price + 'c';
-            if (payoutDisplay) payoutDisplay.textContent = '$' + payout.toFixed(2);
-            if (betButton) betButton.textContent = 'Buy ' + contractLabel;
+        const shares = Math.floor(amount * 100 / price);
+        const payout = shares; // $1 per share
+        if (sharesDisplay) sharesDisplay.textContent = shares + ' shares';
+        if (priceDisplay) priceDisplay.textContent = price + 'c';
+        if (payoutDisplay) payoutDisplay.textContent = '$' + payout.toFixed(2);
+        if (betButton) betButton.textContent = 'Buy ' + contractLabel;
         }
     }
 
-    // ====== ORDER BOOK & POSITION POLLING ======
-    function fetchOrderBook() {
-        fetch('/api/markets/' + marketId + '/orderbook/')
-            .then(response => response.json())
-            .then(data => {
-                if (data.orderbook) {
-                    renderOrderBook(data.orderbook);
-                }
-            })
-            .catch(err => console.error('Error fetching orderbook:', err));
+        // ====== ORDER BOOK & POSITION POLLING ======
+        function fetchOrderBook() {
+            fetch('/api/markets/' + marketId + '/orderbook/')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.orderbook) {
+                        renderOrderBook(data.orderbook);
+                    }
+                })
+                .catch(err => console.error('Error fetching orderbook:', err));
     }
 
-    function renderOrderBook(book) {
-        renderTableRows('yes-bids-body', book.yes_bids, 'text-yes');
+        function renderOrderBook(book) {
+            renderTableRows('yes-bids-body', book.yes_bids, 'text-yes');
         renderTableRows('no-bids-body', book.no_bids, 'text-no');
     }
 
-    function renderTableRows(elementId, rows, colorClass) {
+        function renderTableRows(elementId, rows, colorClass) {
         const tbody = document.getElementById(elementId);
         if (!tbody) return;
 
         if (!rows || rows.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="2" style="color:var(--text-tertiary); text-align:center;">Empty</td></tr>';
-            return;
+            tbody.innerHTML = '<tr><td colspan="2" style="color:var(--text-tertiary); text-align:center; padding: 24px;">Empty</td></tr>';
+        return;
         }
 
         let html = '';
@@ -566,32 +591,72 @@
         tbody.innerHTML = html;
     }
 
-    // Poll every 2 seconds
-    setInterval(fetchOrderBook, 2000);
+        // Poll every 2 seconds
+        setInterval(fetchOrderBook, 2000);
+
+        // ====== RECENT TRADES ======
+        function fetchRecentTrades() {
+            fetch('/api/markets/' + marketId + '/trades/')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.trades) {
+                        renderTrades(data.trades);
+                    }
+                })
+                .catch(err => console.error('Error fetching trades:', err));
+    }
+
+        function renderTrades(trades) {
+        const tbody = document.getElementById('trades-tbody');
+        if (!tbody) return;
+
+        if (!trades || trades.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" style="color:var(--text-tertiary); text-align:center; padding: 24px;">No recent trades</td></tr>';
+        return;
+        }
+
+        let html = '';
+        trades.forEach(trade => {
+            const time = new Date(trade.executed_at);
+        const timeStr = time.toLocaleTimeString('en-US', {hour12: false });
+        const actionBadgeClass = trade.side === 'buy' ? 'text-green' : 'text-red';
+
+        html += `<tr>
+            <td>${timeStr}</td>
+            <td style="font-weight:600" class="${actionBadgeClass}">${trade.side.toUpperCase()}</td>
+            <td>${trade.avg_price}c</td>
+            <td class="text-end">${trade.quantity}</td>
+        </tr>`;
+        });
+        tbody.innerHTML = html;
+    }
 
     // Initialize
     document.addEventListener('DOMContentLoaded', function () {
         createStatusIndicator();
-        connectWebSocket();
-        setInterval(sendPing, 30000);
+    connectWebSocket();
+    setInterval(sendPing, 30000);
+        
+        // Fetch initial data
+        fetchRecentTrades();
 
-        // Listeners for Quick Bet
-        const quickAmount = document.getElementById('quick_amount');
-        const quickYes = document.getElementById('quick_type_yes');
-        const quickNo = document.getElementById('quick_type_no');
-        const quickBuy = document.getElementById('quick_buy');
-        const quickSell = document.getElementById('quick_sell');
+    // Listeners for Quick Bet
+    const quickAmount = document.getElementById('quick_amount');
+    const quickYes = document.getElementById('quick_type_yes');
+    const quickNo = document.getElementById('quick_type_no');
+    const quickBuy = document.getElementById('quick_buy');
+    const quickSell = document.getElementById('quick_sell');
 
-        if (quickAmount) quickAmount.addEventListener('input', updateQuickBetEstimate);
-        if (quickYes) quickYes.addEventListener('change', updateQuickBetEstimate);
-        if (quickNo) quickNo.addEventListener('change', updateQuickBetEstimate);
-        if (quickBuy) quickBuy.addEventListener('change', updateBuySellMode);
-        if (quickSell) quickSell.addEventListener('change', updateBuySellMode);
+    if (quickAmount) quickAmount.addEventListener('input', updateQuickBetEstimate);
+    if (quickYes) quickYes.addEventListener('change', updateQuickBetEstimate);
+    if (quickNo) quickNo.addEventListener('change', updateQuickBetEstimate);
+    if (quickBuy) quickBuy.addEventListener('change', updateBuySellMode);
+    if (quickSell) quickSell.addEventListener('change', updateBuySellMode);
 
-        updateQuickBetEstimate();
+    updateQuickBetEstimate();
 
-        // Chart
-        setTimeout(initPriceChart, 100);
+    // Chart
+    setTimeout(initPriceChart, 100);
     });
 
     window.addEventListener('beforeunload', function () {
@@ -602,41 +667,41 @@
     let priceChart = null;
     function initPriceChart() {
         const ctx = document.getElementById('priceChart');
-        if (!ctx) return;
+    if (!ctx) return;
 
-        priceChart = new Chart(ctx, {
-            type: 'line',
-            data: {
-                datasets: [{
-                    label: 'YES',
-                    data: [],
-                    borderColor: '#00A68C',
-                    backgroundColor: 'rgba(0, 166, 140, 0.1)',
-                    fill: true,
-                    tension: 0.1,
-                    pointRadius: 0
+    priceChart = new Chart(ctx, {
+        type: 'line',
+    data: {
+        datasets: [{
+        label: 'YES',
+    data: [],
+    borderColor: '#00A68C',
+    backgroundColor: 'rgba(0, 166, 140, 0.1)',
+    fill: true,
+    tension: 0.1,
+    pointRadius: 0
                 }, {
-                    label: 'NO',
-                    data: [],
-                    borderColor: '#E63C3C',
-                    backgroundColor: 'rgba(230, 60, 60, 0.1)',
-                    fill: true,
-                    tension: 0.1,
-                    pointRadius: 0
+        label: 'NO',
+    data: [],
+    borderColor: '#E63C3C',
+    backgroundColor: 'rgba(230, 60, 60, 0.1)',
+    fill: true,
+    tension: 0.1,
+    pointRadius: 0
                 }]
             },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: { legend: { display: false } },
-                scales: {
-                    x: { type: 'time', display: false },
-                    y: { display: false }
+    options: {
+        responsive: true,
+    maintainAspectRatio: false,
+    plugins: {legend: {display: false } },
+    scales: {
+        x: {type: 'time', display: false },
+    y: {display: false }
                 }
             }
         });
 
-        loadPriceHistory('24h');
+    loadPriceHistory('24h');
     }
 
     function loadPriceHistory(timeframe) {

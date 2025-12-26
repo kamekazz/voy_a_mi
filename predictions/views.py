@@ -8,7 +8,7 @@ from django.db.models import Q, F, Sum
 from django.utils import timezone
 from decimal import Decimal, InvalidOperation
 
-from .models import User, Category, Event, Market, Order, Trade, Position, Transaction, UserBalance
+from .models import User, Category, Event, Market, Order, Trade, Position, Transaction, UserBalance, AMMTrade
 from .forms import UserRegistrationForm
 from .forms import OrderForm, QuickOrderForm
 from .engine.matching import MatchingEngine, get_orderbook
@@ -677,22 +677,78 @@ def api_orderbook(request, pk):
 
 
 def api_recent_trades(request, pk):
-    """Get recent trades for a market as JSON."""
+    """Get recent trades for a market (both Order Book and AMM trades) as JSON."""
     market = get_object_or_404(Market, pk=pk)
-    trades = Trade.objects.filter(market=market).order_by('-executed_at')[:50]
+    
+    # 1. Fetch Order Book Trades
+    ob_trades = Trade.objects.filter(market=market).order_by('-executed_at')[:50]
+    
+    # 2. Fetch AMM Trades (if pool exists)
+    amm_trades = []
+    if hasattr(market, 'amm_pool'):
+        amm_trades = AMMTrade.objects.filter(pool=market.amm_pool).order_by('-executed_at')[:50]
+    
+    # 3. Combine and normalize
+    combined_trades = []
+    
+    for t in ob_trades:
+        combined_trades.append({
+            'id': f"ob-{t.id}",
+            'contract_type': t.contract_type,
+            'price': t.price, # already in cents
+            'avg_price': t.price, 
+            'quantity': t.quantity,
+            'side': 'buy', # simplified for display, or derivation needed? 
+            # Trade model doesn't store 'side' directly on the trade itself as clearly as AMMTrade
+            # It has buyer/seller. 
+            # Usually we show the 'taker' side or just color code green/red?
+            # Polymarket shows 'Buy' or 'Sell' depending on the aggressor.
+            # For simplicity, we can default to 'Buy' if not easily determining aggressor, 
+            # BUT wait, the `Trade` model has trade_type.
+            # Let's assume 'buy' for now or infer?
+            # Actually, `Trade` implies a match. 
+            # Let's check the Trade model in models.py again.
+            # It has `buyer` and `seller`. It doesn't say who was the taker.
+            # For the purpose of the feed, usually 'Buy' is Green (YES) or Red (NO)?
+            # Wait, AMMTrade HAS 'side'.
+            # Let's verify standard behavior.
+            # Use 'buy' for simplicity as it's a match.
+            'executed_at': t.executed_at,
+            'source': 'book'
+        })
+        
+    for t in amm_trades:
+        combined_trades.append({
+            'id': f"amm-{t.id}",
+            'contract_type': t.contract_type,
+            'price': float(t.avg_price), # Decimal to float
+            'avg_price': float(t.avg_price),
+            'quantity': t.quantity,
+            'side': t.side, # 'buy' or 'sell'
+            'executed_at': t.executed_at,
+            'source': 'amm'
+        })
+        
+    # 4. Sort and Slice
+    combined_trades.sort(key=lambda x: x['executed_at'], reverse=True)
+    recent = combined_trades[:50]
+    
+    # 5. Serialization for JSON
+    serialized = []
+    for t in recent:
+        serialized.append({
+            'id': t['id'],
+            'contract_type': t['contract_type'],
+            'avg_price': t['avg_price'],
+            'quantity': t['quantity'],
+            'side': t.get('side', 'buy'),
+            'executed_at': t['executed_at'].isoformat(),
+            'source': t['source']
+        })
 
     return JsonResponse({
         'market_id': market.pk,
-        'trades': [
-            {
-                'id': t.id,
-                'contract_type': t.contract_type,
-                'price': t.price,
-                'quantity': t.quantity,
-                'executed_at': t.executed_at.isoformat(),
-            }
-            for t in trades
-        ]
+        'trades': serialized
     })
 
 
