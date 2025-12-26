@@ -16,8 +16,6 @@ urlpatterns = [
     # Trading actions (require login)
     path('markets/<int:pk>/order/', views.place_order, name='place_order'),
     path('markets/<int:pk>/quick-bet/', views.place_quick_bet, name='place_quick_bet'),
-    path('markets/<int:pk>/hybrid-bet/', views.place_hybrid_bet, name='place_hybrid_bet'),
-    # The original cancel_order path is removed as per the instruction's implied replacement.
 
     # Mint/Redeem complete sets (require login)
     path('markets/<int:pk>/mint/', views.mint_complete_set_view, name='mint_complete_set'),

@@ -92,9 +92,3 @@ class SelfTradeError(TradingError):
     """Raised when a user's order would match their own order."""
     def __init__(self):
         super().__init__("Self-trading is not allowed.")
-
-
-class InsufficientLiquidityError(TradingError):
-    """Raised when AMM doesn't have enough liquidity for a trade."""
-    def __init__(self, message="Insufficient liquidity for this trade"):
-        super().__init__(message)

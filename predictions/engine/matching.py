@@ -737,7 +737,7 @@ class MatchingEngine:
 
             if new_qty > 0:
                 buyer_pos.no_avg_cost = (
-                    (Decimal(old_qty) * position.no_avg_cost + Decimal(quantity) * Decimal(price)) / Decimal(new_qty)
+                    (Decimal(old_qty) * buyer_pos.no_avg_cost + Decimal(quantity) * Decimal(price)) / Decimal(new_qty)
                 )
             buyer_pos.no_quantity = new_qty
 
@@ -902,7 +902,8 @@ def get_orderbook(market, depth=10):
             quantity=Sum(F('quantity') - F('filled_quantity'))
         ).order_by('price' if ascending else '-price')[:depth]
 
-        return [{'price': o['price'], 'quantity': o['quantity']} for o in orders]
+        # Convert price from dollars (Decimal) to cents (int) for display
+        return [{'price': int(o['price'] * 100) if o['price'] else 0, 'quantity': o['quantity']} for o in orders]
 
     return {
         'yes_bids': get_levels('buy', 'yes', ascending=False),  # Highest first

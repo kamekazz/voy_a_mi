@@ -8,11 +8,10 @@ from django.db.models import Q, F, Sum
 from django.utils import timezone
 from decimal import Decimal, InvalidOperation
 
-from .models import User, Category, Event, Market, Order, Trade, Position, Transaction, UserBalance, AMMTrade
+from .models import User, Category, Event, Market, Order, Trade, Position, Transaction, UserBalance
 from .forms import UserRegistrationForm
 from .forms import OrderForm, QuickOrderForm
 from .engine.matching import MatchingEngine, get_orderbook
-from .bookmaker_amm import BookmakerAMM, get_bookmaker_prices
 from .exceptions import (
     TradingError,
     InsufficientFundsError,
@@ -102,25 +101,13 @@ def market_detail(request, market_id):
         pk=market_id
     )
 
-    # Get AMM prices (live prices from the AMM)
-    amm_prices = get_bookmaker_prices(market)
-
-    # Get orderbook (for limit orders)
+    # Get orderbook
     orderbook = get_orderbook(market, depth=10)
 
-    # Get recent trades (both AMM and orderbook)
+    # Get recent trades from order book
     recent_trades = Trade.objects.filter(market=market).select_related(
         'buyer', 'seller'
     ).order_by('-executed_at')[:20]
-
-    # Get AMM trades for this market
-    from .models import AMMTrade
-    try:
-        amm_trades = AMMTrade.objects.filter(
-            pool__market=market
-        ).select_related('user').order_by('-executed_at')[:20]
-    except:
-        amm_trades = []
 
     # Get user's position and open orders if logged in
     user_position = None
@@ -138,13 +125,22 @@ def market_detail(request, market_id):
     # Order form
     order_form = QuickOrderForm()
 
+    # Order book prices (use last traded price or best bid/ask)
+    ob_prices = {
+        'yes_price': market.last_yes_price,
+        'no_price': market.last_no_price,
+        'best_yes_bid': market.best_yes_bid,
+        'best_yes_ask': market.best_yes_ask,
+        'best_no_bid': market.best_no_bid,
+        'best_no_ask': market.best_no_ask,
+    }
+
     context = {
         'market': market,
         'event': market.event,
-        'amm_prices': amm_prices,
+        'ob_prices': ob_prices,
         'orderbook': orderbook,
         'recent_trades': recent_trades,
-        'amm_trades': amm_trades,
         'user_position': user_position,
         'user_orders': user_orders,
         'order_form': order_form,
@@ -187,8 +183,14 @@ def place_order(request, pk):
         price_val = None
     else:
         try:
-            price_val = Decimal(price)
-        except:
+            price_cents = int(price)
+            # Validate price range (1-99 cents)
+            if price_cents < 1 or price_cents > 99:
+                messages.error(request, "Price must be between 1 and 99 cents")
+                return redirect('predictions:market_detail', market_id=market.id)
+            # Convert cents to dollars for storage
+            price_val = Decimal(price_cents) / 100
+        except (ValueError, TypeError):
              return HttpResponse("Invalid price")
 
     user_balance, _ = UserBalance.objects.get_or_create(user=request.user)
@@ -248,11 +250,11 @@ def place_order(request, pk):
 @login_required
 @require_POST
 def place_quick_bet(request, pk):
-    """Place a quick bet (buy or sell) using the AMM - Polymarket style.
+    """Place a quick bet using market orders through the order book.
 
     Buy: User specifies dollar amount and contract type (YES/NO).
     Sell: User specifies number of shares to sell.
-    AMM provides instant execution with smooth price movement.
+    Uses market orders for best available execution.
     """
     market = get_object_or_404(Market, pk=pk)
 
@@ -266,8 +268,7 @@ def place_quick_bet(request, pk):
         return redirect('predictions:market_detail', market_id=pk)
 
     try:
-        # Use Bookmaker AMM for instant execution with vig
-        amm = BookmakerAMM(market)
+        engine = MatchingEngine(market)
 
         if action == 'sell':
             # SELL: User enters number of shares to sell
@@ -281,19 +282,26 @@ def place_quick_bet(request, pk):
                 messages.error(request, "Quantity must be at least 1 share.")
                 return redirect('predictions:market_detail', market_id=pk)
 
-            # Execute the sell
-            trade = amm.sell(request.user, contract_type, quantity)
-
-            # Get the new price after trade
-            yes_price, no_price = amm.get_display_prices()
-            new_price = yes_price if contract_type == 'yes' else no_price
-
-            messages.success(
-                request,
-                f"Sold {quantity} {contract_type.upper()} shares "
-                f"at avg {float(trade.avg_price):.1f}c for ${float(trade.total_cost):.2f}. "
-                f"New price: {new_price}c"
+            # Place market sell order
+            order, trades = engine.place_order(
+                user=request.user,
+                side='sell',
+                contract_type=contract_type,
+                price=None,  # Market order
+                quantity=quantity
             )
+
+            if trades:
+                total_value = sum(t.quantity * t.price for t in trades) / 100
+                total_qty = sum(t.quantity for t in trades)
+                avg_price = sum(t.quantity * t.price for t in trades) / total_qty if total_qty > 0 else 0
+                messages.success(
+                    request,
+                    f"Sold {total_qty} {contract_type.upper()} shares at avg {avg_price:.1f}c "
+                    f"for ${total_value:.2f}"
+                )
+            else:
+                messages.info(request, f"Sell order placed. Waiting for buyers.")
 
         else:
             # BUY: User enters dollar amount
@@ -311,166 +319,40 @@ def place_quick_bet(request, pk):
                 messages.error(request, f"Insufficient balance. You have ${request.user.available_balance:.2f} available.")
                 return redirect('predictions:market_detail', market_id=pk)
 
-            # Calculate how many shares the amount buys
-            quantity = amm.calculate_shares_for_amount(contract_type, amount)
+            # Calculate approximate quantity based on current price
+            current_price = market.last_yes_price if contract_type == 'yes' else market.last_no_price
+            if current_price <= 0:
+                current_price = 50  # Default to 50c
+            quantity = int(amount * 100 / current_price)
 
             if quantity < 1:
                 messages.error(request, f"Amount too small to buy any shares.")
                 return redirect('predictions:market_detail', market_id=pk)
 
-            # Execute the buy
-            trade = amm.buy(request.user, contract_type, quantity)
-
-            # Get the new price after trade
-            yes_price, no_price = amm.get_display_prices()
-            new_price = yes_price if contract_type == 'yes' else no_price
-
-            messages.success(
-                request,
-                f"Bought {quantity} {contract_type.upper()} shares "
-                f"at avg {float(trade.avg_price):.1f}c for ${float(trade.total_cost):.2f}. "
-                f"New price: {new_price}c. Potential payout: ${quantity:.2f}"
-            )
-
-    except InsufficientFundsError as e:
-        messages.error(request, str(e))
-    except MarketNotActiveError as e:
-        messages.error(request, str(e))
-    except TradingError as e:
-        messages.error(request, f"Trading error: {e}")
-
-    return redirect('predictions:market_detail', market_id=pk)
-
-
-@login_required
-@require_POST
-def place_hybrid_bet(request, pk):
-    """
-    Hybrid bet: Fill what AMM can handle instantly, queue the rest as a limit order.
-
-    For BUY orders:
-    - Part gets filled instantly via AMM
-    - Remainder becomes a pending limit order
-    - User can cancel the pending portion anytime
-
-    For SELL orders:
-    - Just uses AMM directly (selling shares you own)
-    """
-    market = get_object_or_404(Market, pk=pk)
-    action = request.POST.get('action', 'buy')
-    contract_type = request.POST.get('contract_type')
-
-    if contract_type not in ['yes', 'no']:
-        messages.error(request, "Please select YES or NO.")
-        return redirect('predictions:market_detail', market_id=pk)
-
-    try:
-        amm = BookmakerAMM(market)
-
-        # SELL: Just use AMM directly
-        if action == 'sell':
-            try:
-                quantity = int(request.POST.get('amount', '0'))
-            except (ValueError, TypeError):
-                messages.error(request, "Invalid quantity.")
-                return redirect('predictions:market_detail', market_id=pk)
-
-            if quantity <= 0:
-                messages.error(request, "Quantity must be at least 1 share.")
-                return redirect('predictions:market_detail', market_id=pk)
-
-            trade = amm.sell(request.user, contract_type, quantity)
-            yes_price, no_price = amm.get_display_prices()
-            new_price = yes_price if contract_type == 'yes' else no_price
-
-            messages.success(
-                request,
-                f"Sold {quantity} {contract_type.upper()} shares "
-                f"at avg {float(trade.avg_price):.1f}c for ${float(trade.total_cost):.2f}. "
-                f"New price: {new_price}c"
-            )
-            return redirect('predictions:market_detail', market_id=pk)
-
-        # BUY: Hybrid system (AMM + Order Book)
-        try:
-            amount = Decimal(request.POST.get('amount', '0'))
-        except (ValueError, TypeError, InvalidOperation):
-            messages.error(request, "Invalid amount.")
-            return redirect('predictions:market_detail', market_id=pk)
-
-        if amount <= 0:
-            messages.error(request, "Amount must be greater than $0.")
-            return redirect('predictions:market_detail', market_id=pk)
-
-        if amount > request.user.available_balance:
-            messages.error(request, f"Insufficient balance. You have ${request.user.available_balance:.2f} available.")
-            return redirect('predictions:market_detail', market_id=pk)
-
-        # Calculate total shares requested
-        total_quantity = amm.calculate_shares_for_amount(contract_type, amount)
-        if total_quantity < 1:
-            messages.error(request, "Amount too small to buy any shares.")
-            return redirect('predictions:market_detail', market_id=pk)
-
-        # Calculate how much AMM can fill
-        max_amm_qty = amm.max_fillable_quantity(contract_type)
-        amm_quantity = min(total_quantity, max_amm_qty)
-
-        amm_trade = None
-        pending_order = None
-        amm_cost = Decimal('0')
-
-        # Step 1: Fill what AMM can handle
-        if amm_quantity > 0:
-            amm_trade = amm.buy(request.user, contract_type, amm_quantity)
-            amm_cost = amm_trade.total_cost
-
-        # Step 2: Create limit order for remainder
-        remaining_quantity = total_quantity - amm_quantity
-        if remaining_quantity > 0:
-            # Use current fair price for the limit order
-            yes_price, no_price = amm.get_display_prices()
-            order_price = yes_price if contract_type == 'yes' else no_price
-
-            # Create limit order via matching engine
-            engine = MatchingEngine(market)
-            pending_order, trades = engine.place_order(
+            # Place market buy order
+            order, trades = engine.place_order(
                 user=request.user,
                 side='buy',
                 contract_type=contract_type,
-                price=order_price,
-                quantity=remaining_quantity
+                price=None,  # Market order
+                quantity=quantity
             )
 
-        # Build success message
-        if amm_trade and pending_order:
-            # Both: partial AMM fill + pending order
-            messages.success(
-                request,
-                f"Filled {amm_quantity} {contract_type.upper()} shares instantly for ${float(amm_cost):.2f}. "
-                f"Pending: {remaining_quantity} shares @ {order_price}c (cancel anytime in Orders)."
-            )
-        elif amm_trade:
-            # Full AMM fill
-            yes_price, no_price = amm.get_display_prices()
-            new_price = yes_price if contract_type == 'yes' else no_price
-            messages.success(
-                request,
-                f"Bought {amm_quantity} {contract_type.upper()} shares "
-                f"at avg {float(amm_trade.avg_price):.1f}c for ${float(amm_cost):.2f}. "
-                f"New price: {new_price}c"
-            )
-        elif pending_order:
-            # AMM at capacity, all goes to order book
-            yes_price, no_price = amm.get_display_prices()
-            order_price = yes_price if contract_type == 'yes' else no_price
-            messages.info(
-                request,
-                f"AMM at capacity. Created limit order for {remaining_quantity} {contract_type.upper()} @ {order_price}c. "
-                f"Will fill when someone bets the other side."
-            )
+            if trades:
+                total_value = sum(t.quantity * t.price for t in trades) / 100
+                total_qty = sum(t.quantity for t in trades)
+                avg_price = sum(t.quantity * t.price for t in trades) / total_qty if total_qty > 0 else 0
+                messages.success(
+                    request,
+                    f"Bought {total_qty} {contract_type.upper()} shares at avg {avg_price:.1f}c "
+                    f"for ${total_value:.2f}. Potential payout: ${total_qty:.2f}"
+                )
+            else:
+                messages.info(request, f"Buy order placed. Waiting for sellers.")
 
     except InsufficientFundsError as e:
+        messages.error(request, str(e))
+    except InsufficientPositionError as e:
         messages.error(request, str(e))
     except MarketNotActiveError as e:
         messages.error(request, str(e))
@@ -677,73 +559,22 @@ def api_orderbook(request, pk):
 
 
 def api_recent_trades(request, pk):
-    """Get recent trades for a market (both Order Book and AMM trades) as JSON."""
+    """Get recent trades for a market as JSON (Order Book only)."""
     market = get_object_or_404(Market, pk=pk)
-    
-    # 1. Fetch Order Book Trades
-    ob_trades = Trade.objects.filter(market=market).order_by('-executed_at')[:50]
-    
-    # 2. Fetch AMM Trades (if pool exists)
-    amm_trades = []
-    if hasattr(market, 'amm_pool'):
-        amm_trades = AMMTrade.objects.filter(pool=market.amm_pool).order_by('-executed_at')[:50]
-    
-    # 3. Combine and normalize
-    combined_trades = []
-    
-    for t in ob_trades:
-        combined_trades.append({
-            'id': f"ob-{t.id}",
-            'contract_type': t.contract_type,
-            'price': t.price, # already in cents
-            'avg_price': t.price, 
-            'quantity': t.quantity,
-            'side': 'buy', # simplified for display, or derivation needed? 
-            # Trade model doesn't store 'side' directly on the trade itself as clearly as AMMTrade
-            # It has buyer/seller. 
-            # Usually we show the 'taker' side or just color code green/red?
-            # Polymarket shows 'Buy' or 'Sell' depending on the aggressor.
-            # For simplicity, we can default to 'Buy' if not easily determining aggressor, 
-            # BUT wait, the `Trade` model has trade_type.
-            # Let's assume 'buy' for now or infer?
-            # Actually, `Trade` implies a match. 
-            # Let's check the Trade model in models.py again.
-            # It has `buyer` and `seller`. It doesn't say who was the taker.
-            # For the purpose of the feed, usually 'Buy' is Green (YES) or Red (NO)?
-            # Wait, AMMTrade HAS 'side'.
-            # Let's verify standard behavior.
-            # Use 'buy' for simplicity as it's a match.
-            'executed_at': t.executed_at,
-            'source': 'book'
-        })
-        
-    for t in amm_trades:
-        combined_trades.append({
-            'id': f"amm-{t.id}",
-            'contract_type': t.contract_type,
-            'price': float(t.avg_price), # Decimal to float
-            'avg_price': float(t.avg_price),
-            'quantity': t.quantity,
-            'side': t.side, # 'buy' or 'sell'
-            'executed_at': t.executed_at,
-            'source': 'amm'
-        })
-        
-    # 4. Sort and Slice
-    combined_trades.sort(key=lambda x: x['executed_at'], reverse=True)
-    recent = combined_trades[:50]
-    
-    # 5. Serialization for JSON
+
+    # Fetch Order Book Trades
+    trades = Trade.objects.filter(market=market).order_by('-executed_at')[:50]
+
+    # Serialize trades
     serialized = []
-    for t in recent:
+    for t in trades:
         serialized.append({
-            'id': t['id'],
-            'contract_type': t['contract_type'],
-            'avg_price': t['avg_price'],
-            'quantity': t['quantity'],
-            'side': t.get('side', 'buy'),
-            'executed_at': t['executed_at'].isoformat(),
-            'source': t['source']
+            'id': t.id,
+            'contract_type': t.contract_type,
+            'price': t.price,
+            'quantity': t.quantity,
+            'trade_type': t.trade_type,  # direct, mint, or merge
+            'executed_at': t.executed_at.isoformat(),
         })
 
     return JsonResponse({
@@ -779,8 +610,7 @@ def api_user_position(request, pk):
 
 
 def api_price_history(request, pk):
-    """Get price history from AMM trades for charting."""
-    from .models import AMMTrade
+    """Get price history from Order Book trades for charting."""
     from datetime import timedelta
 
     market = get_object_or_404(Market, pk=pk)
@@ -788,7 +618,7 @@ def api_price_history(request, pk):
     # Parse timeframe parameter
     timeframe = request.GET.get('timeframe', '24h')
     now = timezone.now()
-    
+
     # Determine the cutoff time
     if timeframe == '1h':
         cutoff = now - timedelta(hours=1)
@@ -802,32 +632,31 @@ def api_price_history(request, pk):
     # The actual start time for the chart is the later of cutoff or market creation
     start_time = max(cutoff, market.created_at)
 
-    # Determine starting price
-    # 1. If start_time is market creation, it's 50/50
-    # 2. Otherwise, find the last trade BEFORE cutoff to get the opening state
+    # Determine starting price from last trade before cutoff
     start_yes = 50
     start_no = 50
 
-    if start_time > market.created_at: # We are looking at a window (e.g. last 24h) of an older market
-        last_trade_before = AMMTrade.objects.filter(
-            pool__market=market,
+    if start_time > market.created_at:
+        last_trade_before = Trade.objects.filter(
+            market=market,
             executed_at__lt=start_time
         ).order_by('-executed_at').first()
 
         if last_trade_before:
+            # Use the trade price to determine market state
             if last_trade_before.contract_type == 'yes':
-                start_yes = last_trade_before.price_after
-                start_no = 100 - last_trade_before.price_after
+                start_yes = last_trade_before.price
+                start_no = 100 - last_trade_before.price
             else:
-                start_no = last_trade_before.price_after
-                start_yes = 100 - last_trade_before.price_after
+                start_no = last_trade_before.price
+                start_yes = 100 - last_trade_before.price
 
     # Get trades within the window
-    trades = AMMTrade.objects.filter(
-        pool__market=market,
+    trades = Trade.objects.filter(
+        market=market,
         executed_at__gte=start_time
     ).order_by('executed_at').values(
-        'executed_at', 'price_after', 'contract_type'
+        'executed_at', 'price', 'contract_type'
     )
 
     # Build price history
@@ -845,14 +674,14 @@ def api_price_history(request, pk):
     current_no = start_no
 
     for trade in trades:
-        # Determine new prices
+        # Determine new prices based on trade
         if trade['contract_type'] == 'yes':
-            p_yes = trade['price_after']
-            p_no = 100 - trade['price_after']
+            p_yes = trade['price']
+            p_no = 100 - trade['price']
         else:
-            p_no = trade['price_after']
-            p_yes = 100 - trade['price_after']
-        
+            p_no = trade['price']
+            p_yes = 100 - trade['price']
+
         price_history.append({
             'time': trade['executed_at'].timestamp() * 1000,
             'yes_price': p_yes,
@@ -864,7 +693,7 @@ def api_price_history(request, pk):
     # Add current point (now) to ensure line goes to the edge
     price_history.append({
         'time': now.timestamp() * 1000,
-        'yes_price': current_yes, # Use tracked current in loop to be consistent with history
+        'yes_price': current_yes,
         'no_price': current_no,
     })
 
