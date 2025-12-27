@@ -633,8 +633,10 @@ def api_recent_trades(request, pk):
             'id': t.id,
             'contract_type': t.contract_type,
             'price': t.price,
+            'avg_price': t.price,  # Frontend expects avg_price
             'quantity': t.quantity,
             'trade_type': t.trade_type,  # direct, mint, or merge
+            'side': 'buy',  # All trades have a buyer
             'executed_at': t.executed_at.isoformat(),
         })
 
