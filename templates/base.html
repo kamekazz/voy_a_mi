@@ -24,8 +24,7 @@
     <!-- Top Header -->
     <header class="app-header">
         <div class="brand">
-            <i class="bi bi-graph-up-arrow text-primary"></i>
-            <span>Voy a Mi</span>
+            <img src="{% static 'nav icon.png' %}" alt="Voy a Mi" class="brand-icon">
         </div>
         
         <div class="header-actions">
@@ -33,6 +32,9 @@
                 <div class="balance-badge">
                     ${{ user.available_balance|floatformat:2 }}
                 </div>
+                <a href="{% url 'logout' %}" class="logout-btn" title="Logout">
+                    <i class="bi bi-box-arrow-right"></i>
+                </a>
             {% else %}
                 <a href="{% url 'login' %}" class="btn btn-outline" style="padding: 6px 12px; font-size: 0.85rem;">Login</a>
             {% endif %}

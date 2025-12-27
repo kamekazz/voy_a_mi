@@ -902,8 +902,8 @@ def get_orderbook(market, depth=10):
             quantity=Sum(F('quantity') - F('filled_quantity'))
         ).order_by('price' if ascending else '-price')[:depth]
 
-        # Price is already stored in cents, convert to int for display
-        return [{'price': int(o['price']) if o['price'] else 0, 'quantity': o['quantity']} for o in orders]
+        # Price is stored in dollars (0.01-0.99), convert to cents for display
+        return [{'price': int(float(o['price']) * 100) if o['price'] else 0, 'quantity': o['quantity']} for o in orders]
 
     return {
         'yes_bids': get_levels('buy', 'yes', ascending=False),  # Highest first

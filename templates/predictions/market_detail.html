@@ -162,45 +162,56 @@
 </div>
 {% endif %}
 
-<!-- Orderbook Section -->
+<!-- Orderbook Section (Polymarket Style) -->
 <div class="orderbook-section">
-    <div class="section-title">Orderbook</div>
-    <div
-        style="background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border-color); overflow: hidden;">
-        <div class="d-flex">
-            <div style="flex: 1; border-right: 1px solid var(--border-color);">
-                <div
-                    style="padding: 8px; text-align: center; font-weight: 600; color: var(--pm-green); border-bottom: 1px solid var(--border-color);">
-                    YES</div>
-                <!-- YES Bids/Asks -->
-                <table class="orderbook-table">
-                    <thead>
-                        <tr>
-                            <th style="padding-left: 12px;">Price</th>
-                            <th class="text-end" style="padding-right: 12px;">Qty</th>
-                        </tr>
-                    </thead>
-                    <tbody id="yes-bids-body">
-                        <!-- JS injected -->
-                    </tbody>
-                </table>
+    <div class="orderbook-container">
+        <!-- Header with tabs -->
+        <div class="orderbook-header">
+            <div class="orderbook-title">Order Book <span class="orderbook-help" title="View buy and sell orders">?</span></div>
+            <div class="orderbook-collapse">▼</div>
+        </div>
+
+        <!-- Tab bar -->
+        <div class="orderbook-tabs">
+            <button class="orderbook-tab active" id="tab-yes" onclick="switchOrderbookTab('yes')">Trade Yes</button>
+            <button class="orderbook-tab" id="tab-no" onclick="switchOrderbookTab('no')">Trade No</button>
+            <div class="orderbook-refresh">
+                <button class="refresh-btn" onclick="fetchOrderBook()" title="Refresh">↻</button>
             </div>
-            <div style="flex: 1;">
-                <div
-                    style="padding: 8px; text-align: center; font-weight: 600; color: var(--pm-red); border-bottom: 1px solid var(--border-color);">
-                    NO</div>
-                <table class="orderbook-table">
-                    <thead>
-                        <tr>
-                            <th style="padding-left: 12px;">Price</th>
-                            <th class="text-end" style="padding-right: 12px;">Qty</th>
-                        </tr>
-                    </thead>
-                    <tbody id="no-bids-body">
-                        <!-- JS injected -->
-                    </tbody>
-                </table>
+        </div>
+
+        <!-- Column headers -->
+        <div class="orderbook-columns">
+            <div class="col-trade">TRADE <span id="col-trade-type">YES</span> ▼</div>
+            <div class="col-price">PRICE</div>
+            <div class="col-shares">SHARES</div>
+            <div class="col-total">TOTAL</div>
+        </div>
+
+        <!-- Asks section (sells) - displayed with highest price at top -->
+        <div class="orderbook-asks" id="orderbook-asks">
+            <!-- JS injected - rows will be inserted here -->
+            <div class="orderbook-empty">Loading...</div>
+        </div>
+
+        <!-- Spread row -->
+        <div class="orderbook-spread" id="orderbook-spread">
+            <div class="spread-label">
+                <span class="asks-label">Asks</span>
             </div>
+            <div class="spread-info">
+                <span>Last: <span id="spread-last">--</span></span>
+                <span>Spread: <span id="spread-value">--</span></span>
+            </div>
+            <div class="spread-label">
+                <span class="bids-label">Bids</span>
+            </div>
+        </div>
+
+        <!-- Bids section (buys) - highest price at top -->
+        <div class="orderbook-bids" id="orderbook-bids">
+            <!-- JS injected - rows will be inserted here -->
+            <div class="orderbook-empty">Loading...</div>
         </div>
     </div>
 </div>
@@ -542,6 +553,9 @@ console.log('=== SCRIPT STARTING ===');
     }
 
         // ====== ORDER BOOK & POSITION POLLING ======
+        let currentOrderbookData = null;
+        let currentOrderbookTab = 'yes';
+
         function fetchOrderBook() {
             console.log('Fetching orderbook for market:', marketId);
             fetch('/api/markets/' + marketId + '/orderbook/')
@@ -554,35 +568,156 @@ console.log('=== SCRIPT STARTING ===');
                 .then(data => {
                     console.log('Orderbook data received');
                     if (data.orderbook) {
-                        renderOrderBook(data.orderbook);
+                        currentOrderbookData = data;
+                        renderPolymarketOrderbook(data.orderbook, currentOrderbookTab, data);
                     }
                 })
                 .catch(err => console.error('Error fetching orderbook:', err));
-    }
-
-        function renderOrderBook(book) {
-            renderTableRows('yes-bids-body', book.yes_bids, 'text-yes');
-        renderTableRows('no-bids-body', book.no_bids, 'text-no');
-    }
-
-        function renderTableRows(elementId, rows, colorClass) {
-        const tbody = document.getElementById(elementId);
-        if (!tbody) return;
-
-        if (!rows || rows.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="2" style="color:var(--text-tertiary); text-align:center; padding: 24px;">Empty</td></tr>';
-        return;
         }
 
-        let html = '';
-        rows.forEach(row => {
-            html += `<tr>
-                        <td class="${colorClass}">${row.price}c</td>
-                        <td class="text-end">${row.quantity}</td>
-                     </tr>`;
-        });
-        tbody.innerHTML = html;
-    }
+        function switchOrderbookTab(tabType) {
+            currentOrderbookTab = tabType;
+
+            // Update tab styles
+            const yesTab = document.getElementById('tab-yes');
+            const noTab = document.getElementById('tab-no');
+            const colTradeType = document.getElementById('col-trade-type');
+
+            if (tabType === 'yes') {
+                yesTab.classList.add('active');
+                noTab.classList.remove('active');
+                colTradeType.textContent = 'YES';
+            } else {
+                noTab.classList.add('active');
+                yesTab.classList.remove('active');
+                colTradeType.textContent = 'NO';
+            }
+
+            // Re-render with current data
+            if (currentOrderbookData) {
+                renderPolymarketOrderbook(currentOrderbookData.orderbook, tabType, currentOrderbookData);
+            }
+        }
+
+        function renderPolymarketOrderbook(book, contractType, marketData) {
+            const asksContainer = document.getElementById('orderbook-asks');
+            const bidsContainer = document.getElementById('orderbook-bids');
+            const spreadLast = document.getElementById('spread-last');
+            const spreadValue = document.getElementById('spread-value');
+
+            // Get the relevant data based on tab
+            const asks = contractType === 'yes' ? book.yes_asks : book.no_asks;
+            const bids = contractType === 'yes' ? book.yes_bids : book.no_bids;
+            const lastPrice = contractType === 'yes' ? marketData.last_yes_price : marketData.last_no_price;
+            const bestBid = contractType === 'yes' ? marketData.best_yes_bid : marketData.best_no_bid;
+            const bestAsk = contractType === 'yes' ? marketData.best_yes_ask : marketData.best_no_ask;
+
+            // Calculate max quantity for depth bars
+            const allQuantities = [...(asks || []), ...(bids || [])].map(o => o.quantity);
+            const maxQty = Math.max(...allQuantities, 1);
+
+            // Render asks (reversed so lowest price is at bottom, closest to spread)
+            const reversedAsks = [...(asks || [])].reverse();
+            asksContainer.innerHTML = renderOrderbookRows(reversedAsks, 'ask', maxQty, contractType);
+
+            // Render bids (highest price at top, closest to spread)
+            bidsContainer.innerHTML = renderOrderbookRows(bids || [], 'bid', maxQty, contractType);
+
+            // Update spread info
+            spreadLast.textContent = lastPrice ? lastPrice + '¢' : '--';
+            const spread = (bestAsk && bestBid) ? (bestAsk - bestBid) : null;
+            spreadValue.textContent = spread !== null ? spread + '¢' : '--';
+        }
+
+        function renderOrderbookRows(rows, type, maxQty, contractType) {
+            if (!rows || rows.length === 0) {
+                return '<div class="orderbook-empty">No ' + (type === 'ask' ? 'asks' : 'bids') + '</div>';
+            }
+
+            let html = '';
+            rows.forEach(row => {
+                const depthPercent = (row.quantity / maxQty) * 100;
+                const total = (row.price * row.quantity / 100).toFixed(2);
+                const rowClass = type === 'ask' ? 'ask-row' : 'bid-row';
+                const side = type === 'ask' ? 'sell' : 'buy';
+
+                html += `
+                <div class="orderbook-row ${rowClass}" onclick="fillPriceFromRow(${row.price})" data-price="${row.price}" data-quantity="${row.quantity}">
+                    <div class="depth-bar" style="width: ${depthPercent}%"></div>
+                    <div class="trade-cell">
+                        <button class="trade-btn" onclick="event.stopPropagation(); instantTrade(${row.price}, ${row.quantity}, '${side}', '${contractType}')" title="Click to trade">⚡</button>
+                    </div>
+                    <div class="price-cell">${row.price}¢</div>
+                    <div class="shares-cell">${row.quantity.toLocaleString()}</div>
+                    <div class="total-cell">$${total}</div>
+                </div>`;
+            });
+            return html;
+        }
+
+        function fillPriceFromRow(priceInCents) {
+            // Fill the limit order price input
+            const limitPriceInput = document.getElementById('limit_price');
+            if (limitPriceInput) {
+                limitPriceInput.value = priceInCents;
+                // Trigger change event to update calculations
+                limitPriceInput.dispatchEvent(new Event('input'));
+            }
+            // Also switch to limit order tab if on quick bet
+            switchTab('limit');
+        }
+
+        function instantTrade(price, quantity, side, contractType) {
+            // Prompt for quantity (default to 1)
+            const tradeQty = prompt('Enter quantity to trade (available: ' + quantity + '):', '1');
+            if (!tradeQty || isNaN(parseInt(tradeQty)) || parseInt(tradeQty) <= 0) {
+                return;
+            }
+
+            // Create and submit a form to the place_order endpoint
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = '/place_order/' + marketId + '/';
+
+            // Add CSRF token
+            const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+            const csrfInput = document.createElement('input');
+            csrfInput.type = 'hidden';
+            csrfInput.name = 'csrfmiddlewaretoken';
+            csrfInput.value = csrfToken;
+            form.appendChild(csrfInput);
+
+            // Add order type (BUY/SELL)
+            const orderTypeInput = document.createElement('input');
+            orderTypeInput.type = 'hidden';
+            orderTypeInput.name = 'order_type';
+            orderTypeInput.value = side.toUpperCase();
+            form.appendChild(orderTypeInput);
+
+            // Add outcome (contract type)
+            const outcomeInput = document.createElement('input');
+            outcomeInput.type = 'hidden';
+            outcomeInput.name = 'outcome';
+            outcomeInput.value = contractType.toUpperCase();
+            form.appendChild(outcomeInput);
+
+            // Add price
+            const priceInput = document.createElement('input');
+            priceInput.type = 'hidden';
+            priceInput.name = 'price';
+            priceInput.value = price;
+            form.appendChild(priceInput);
+
+            // Add quantity
+            const qtyInput = document.createElement('input');
+            qtyInput.type = 'hidden';
+            qtyInput.name = 'quantity';
+            qtyInput.value = parseInt(tradeQty);
+            form.appendChild(qtyInput);
+
+            document.body.appendChild(form);
+            form.submit();
+        }
 
         // ====== RECENT TRADES ======
         function fetchRecentTrades() {
