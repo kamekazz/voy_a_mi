@@ -288,6 +288,8 @@ class Order(models.Model):
     class OrderType(models.TextChoices):
         LIMIT = 'limit', 'Limit'
         MARKET = 'market', 'Market'
+        MINT_SET = 'mint_set', 'Mint Complete Set'
+        REDEEM_SET = 'redeem_set', 'Redeem Complete Set'
 
     class Status(models.TextChoices):
         OPEN = 'open', 'Open'
@@ -310,7 +312,7 @@ class Order(models.Model):
     side = models.CharField(max_length=4, choices=Side.choices)
     contract_type = models.CharField(max_length=3, choices=ContractType.choices)
     order_type = models.CharField(
-        max_length=6,
+        max_length=10,
         choices=OrderType.choices,
         default=OrderType.LIMIT,
         help_text="Limit orders specify price, market orders use best available"

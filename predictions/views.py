@@ -11,13 +11,7 @@ from decimal import Decimal, InvalidOperation
 from .models import User, Category, Event, Market, Order, Trade, Position, Transaction, UserBalance
 from .forms import UserRegistrationForm
 from .forms import OrderForm, QuickOrderForm
-from .engine.matching import MatchingEngine, get_orderbook
-from .exceptions import (
-    TradingError,
-    InsufficientFundsError,
-    InsufficientPositionError,
-    MarketNotActiveError,
-)
+from .engine.matching import get_orderbook
 
 
 def index(request):
@@ -250,13 +244,18 @@ def place_order(request, pk):
 @login_required
 @require_POST
 def place_quick_bet(request, pk):
-    """Place a quick bet using market orders through the order book.
+    """Place a quick bet - creates order for engine to process.
 
     Buy: User specifies dollar amount and contract type (YES/NO).
     Sell: User specifies number of shares to sell.
-    Uses market orders for best available execution.
+    Order is placed in the order book for the engine to match.
     """
     market = get_object_or_404(Market, pk=pk)
+
+    # Validate market is active
+    if not market.is_trading_active:
+        messages.error(request, "Market is not active for trading.")
+        return redirect('predictions:market_detail', market_id=pk)
 
     # Parse parameters
     action = request.POST.get('action', 'buy')  # 'buy' or 'sell'
@@ -268,7 +267,8 @@ def place_quick_bet(request, pk):
         return redirect('predictions:market_detail', market_id=pk)
 
     try:
-        engine = MatchingEngine(market)
+        user_balance, _ = UserBalance.objects.get_or_create(user=request.user)
+        position, _ = Position.objects.get_or_create(user=request.user, market=market)
 
         if action == 'sell':
             # SELL: User enters number of shares to sell
@@ -282,26 +282,33 @@ def place_quick_bet(request, pk):
                 messages.error(request, "Quantity must be at least 1 share.")
                 return redirect('predictions:market_detail', market_id=pk)
 
-            # Place market sell order
-            order, trades = engine.place_order(
+            # Reserve shares (move from available to reserved)
+            if contract_type == 'yes':
+                if position.yes_quantity < quantity:
+                    messages.error(request, f"Insufficient YES shares. You have {position.yes_quantity}.")
+                    return redirect('predictions:market_detail', market_id=pk)
+                position.yes_quantity -= quantity
+                position.reserved_yes_quantity += quantity
+            else:
+                if position.no_quantity < quantity:
+                    messages.error(request, f"Insufficient NO shares. You have {position.no_quantity}.")
+                    return redirect('predictions:market_detail', market_id=pk)
+                position.no_quantity -= quantity
+                position.reserved_no_quantity += quantity
+            position.save()
+
+            # Create market sell order - engine will process
+            Order.objects.create(
                 user=request.user,
+                market=market,
                 side='sell',
                 contract_type=contract_type,
-                price=None,  # Market order
-                quantity=quantity
+                order_type='market',
+                price=None,  # Market order - engine determines price
+                quantity=quantity,
+                status=Order.Status.OPEN
             )
-
-            if trades:
-                total_value = sum(t.quantity * t.price for t in trades) / 100
-                total_qty = sum(t.quantity for t in trades)
-                avg_price = sum(t.quantity * t.price for t in trades) / total_qty if total_qty > 0 else 0
-                messages.success(
-                    request,
-                    f"Sold {total_qty} {contract_type.upper()} shares at avg {avg_price:.1f}c "
-                    f"for ${total_value:.2f}"
-                )
-            else:
-                messages.info(request, f"Sell order placed. Waiting for buyers.")
+            messages.success(request, f"Sell order placed for {quantity} {contract_type.upper()} shares. Waiting for match.")
 
         else:
             # BUY: User enters dollar amount
@@ -315,11 +322,7 @@ def place_quick_bet(request, pk):
                 messages.error(request, "Amount must be greater than $0.")
                 return redirect('predictions:market_detail', market_id=pk)
 
-            if amount > request.user.available_balance:
-                messages.error(request, f"Insufficient balance. You have ${request.user.available_balance:.2f} available.")
-                return redirect('predictions:market_detail', market_id=pk)
-
-            # Calculate approximate quantity based on current price
+            # Calculate quantity based on current price
             current_price = market.last_yes_price if contract_type == 'yes' else market.last_no_price
             if current_price <= 0:
                 current_price = 50  # Default to 50c
@@ -329,35 +332,31 @@ def place_quick_bet(request, pk):
                 messages.error(request, f"Amount too small to buy any shares.")
                 return redirect('predictions:market_detail', market_id=pk)
 
-            # Place market buy order
-            order, trades = engine.place_order(
+            # Reserve funds (for market order, reserve at $1 max per share to be safe)
+            reserve_amount = Decimal(quantity)  # $1 per share max
+            if user_balance.balance < reserve_amount:
+                messages.error(request, f"Insufficient balance. You have ${user_balance.balance:.2f}.")
+                return redirect('predictions:market_detail', market_id=pk)
+
+            user_balance.balance -= reserve_amount
+            user_balance.reserved_balance += reserve_amount
+            user_balance.save()
+
+            # Create market buy order - engine will process
+            Order.objects.create(
                 user=request.user,
+                market=market,
                 side='buy',
                 contract_type=contract_type,
-                price=None,  # Market order
-                quantity=quantity
+                order_type='market',
+                price=None,  # Market order - engine determines price
+                quantity=quantity,
+                status=Order.Status.OPEN
             )
+            messages.success(request, f"Buy order placed for {quantity} {contract_type.upper()} shares. Waiting for match.")
 
-            if trades:
-                total_value = sum(t.quantity * t.price for t in trades) / 100
-                total_qty = sum(t.quantity for t in trades)
-                avg_price = sum(t.quantity * t.price for t in trades) / total_qty if total_qty > 0 else 0
-                messages.success(
-                    request,
-                    f"Bought {total_qty} {contract_type.upper()} shares at avg {avg_price:.1f}c "
-                    f"for ${total_value:.2f}. Potential payout: ${total_qty:.2f}"
-                )
-            else:
-                messages.info(request, f"Buy order placed. Waiting for sellers.")
-
-    except InsufficientFundsError as e:
-        messages.error(request, str(e))
-    except InsufficientPositionError as e:
-        messages.error(request, str(e))
-    except MarketNotActiveError as e:
-        messages.error(request, str(e))
-    except TradingError as e:
-        messages.error(request, f"Trading error: {e}")
+    except Exception as e:
+        messages.error(request, f"Error placing order: {e}")
 
     return redirect('predictions:market_detail', market_id=pk)
 
@@ -366,35 +365,59 @@ def place_quick_bet(request, pk):
 @require_POST
 def cancel_order(request, pk):
     """Cancel an order and refund reserved funds/shares."""
-    # Note: Using 'pk' to match URL pattern, but function logic used order_id
-    # I will unify this.
     order = get_object_or_404(Order, pk=pk, user=request.user)
     market = order.market
-    
-    # Reverse Reservation
-    user_balance = UserBalance.objects.get(user=request.user)
-    position = Position.objects.get(user=request.user, market=market)
 
-    if order.order_type == 'BUY':
-        # Refund reserved funds
-        refund_price = order.price if order.price is not None else Decimal('1.00')
-        refund_amount = refund_price * order.quantity
-        
-        user_balance.reserved_balance -= refund_amount
-        user_balance.balance += refund_amount
+    # Only allow cancelling open or partially filled orders
+    if order.status not in [Order.Status.OPEN, Order.Status.PARTIALLY_FILLED]:
+        messages.error(request, "Order cannot be cancelled.")
+        return redirect('predictions:market_detail', market_id=market.id)
+
+    # Get user balance and position
+    user_balance, _ = UserBalance.objects.get_or_create(user=request.user)
+    position, _ = Position.objects.get_or_create(user=request.user, market=market)
+
+    # Calculate remaining quantity (unfilled portion)
+    remaining_qty = order.quantity - order.filled_quantity
+
+    if order.order_type == 'mint_set':
+        # Refund reserved funds for mint request
+        refund = Decimal(remaining_qty)  # $1 per set
+        user_balance.reserved_balance -= refund
+        user_balance.balance += refund
         user_balance.save()
-        
-    elif order.order_type == 'SELL':
-        if order.outcome == 'YES':
-            position.reserved_yes_quantity -= order.quantity
-            position.yes_quantity += order.quantity
-        else:
-            position.reserved_no_quantity -= order.quantity
-            position.no_quantity += order.quantity
+
+    elif order.order_type == 'redeem_set':
+        # Return reserved shares for redeem request
+        position.reserved_yes_quantity -= remaining_qty
+        position.yes_quantity += remaining_qty
+        position.reserved_no_quantity -= remaining_qty
+        position.no_quantity += remaining_qty
         position.save()
 
-    order.delete()
-    return redirect('market_detail', market_id=market.id)
+    elif order.side == 'buy':
+        # Refund reserved funds for buy order
+        refund_price = order.price if order.price is not None else Decimal('1.00')
+        refund = refund_price * remaining_qty
+        user_balance.reserved_balance -= refund
+        user_balance.balance += refund
+        user_balance.save()
+
+    elif order.side == 'sell':
+        # Return reserved shares for sell order
+        if order.contract_type == 'yes':
+            position.reserved_yes_quantity -= remaining_qty
+            position.yes_quantity += remaining_qty
+        else:
+            position.reserved_no_quantity -= remaining_qty
+            position.no_quantity += remaining_qty
+        position.save()
+
+    order.status = Order.Status.CANCELLED
+    order.save()
+
+    messages.success(request, "Order cancelled.")
+    return redirect('predictions:market_detail', market_id=market.id)
 
 
 
@@ -403,10 +426,12 @@ def cancel_order(request, pk):
 @login_required
 @require_POST
 def mint_complete_set_view(request, pk):
-    """Mint complete sets of YES+NO contracts."""
-    from .engine.matching import mint_complete_set
-
+    """Request to mint complete sets - engine processes in background."""
     market = get_object_or_404(Market, pk=pk)
+
+    if not market.is_trading_active:
+        messages.error(request, "Market is not active.")
+        return redirect('predictions:market_detail', market_id=pk)
 
     try:
         quantity = int(request.POST.get('quantity', 0))
@@ -414,31 +439,48 @@ def mint_complete_set_view(request, pk):
         messages.error(request, "Invalid quantity.")
         return redirect('predictions:market_detail', market_id=pk)
 
-    try:
-        result = mint_complete_set(market, request.user, quantity)
-        messages.success(
-            request,
-            f"Minted {result['quantity']} complete sets. "
-            f"Received {result['yes_received']} YES + {result['no_received']} NO contracts. "
-            f"Cost: ${result['cost']:.2f}"
-        )
-    except InsufficientFundsError as e:
-        messages.error(request, str(e))
-    except MarketNotActiveError as e:
-        messages.error(request, str(e))
-    except TradingError as e:
-        messages.error(request, f"Error: {e}")
+    if quantity <= 0:
+        messages.error(request, "Quantity must be positive.")
+        return redirect('predictions:market_detail', market_id=pk)
 
+    cost = Decimal(quantity)  # $1 per complete set
+
+    user_balance, _ = UserBalance.objects.get_or_create(user=request.user)
+
+    if user_balance.balance < cost:
+        messages.error(request, f"Insufficient funds. Need ${cost:.2f}, have ${user_balance.balance:.2f}.")
+        return redirect('predictions:market_detail', market_id=pk)
+
+    # Reserve funds
+    user_balance.balance -= cost
+    user_balance.reserved_balance += cost
+    user_balance.save()
+
+    # Create mint request as special order type - engine will process
+    Order.objects.create(
+        user=request.user,
+        market=market,
+        side='buy',  # Conceptually buying complete sets
+        contract_type='yes',  # Placeholder - minting gives both YES and NO
+        order_type='mint_set',
+        price=Decimal('1.00'),  # $1 per set
+        quantity=quantity,
+        status=Order.Status.OPEN
+    )
+
+    messages.success(request, f"Mint request submitted for {quantity} complete sets. Processing...")
     return redirect('predictions:market_detail', market_id=pk)
 
 
 @login_required
 @require_POST
 def redeem_complete_set_view(request, pk):
-    """Redeem complete sets for $1 each."""
-    from .engine.matching import redeem_complete_set
-
+    """Request to redeem complete sets - engine processes in background."""
     market = get_object_or_404(Market, pk=pk)
+
+    if not market.is_trading_active:
+        messages.error(request, "Market is not active.")
+        return redirect('predictions:market_detail', market_id=pk)
 
     try:
         quantity = int(request.POST.get('quantity', 0))
@@ -446,21 +488,40 @@ def redeem_complete_set_view(request, pk):
         messages.error(request, "Invalid quantity.")
         return redirect('predictions:market_detail', market_id=pk)
 
-    try:
-        result = redeem_complete_set(market, request.user, quantity)
-        messages.success(
-            request,
-            f"Redeemed {result['quantity']} complete sets. "
-            f"Burned {result['yes_burned']} YES + {result['no_burned']} NO contracts. "
-            f"Received: ${result['payout']:.2f}"
-        )
-    except InsufficientPositionError as e:
-        messages.error(request, str(e))
-    except MarketNotActiveError as e:
-        messages.error(request, str(e))
-    except TradingError as e:
-        messages.error(request, f"Error: {e}")
+    if quantity <= 0:
+        messages.error(request, "Quantity must be positive.")
+        return redirect('predictions:market_detail', market_id=pk)
 
+    position, _ = Position.objects.get_or_create(user=request.user, market=market)
+
+    # Check user has enough of BOTH contract types
+    if position.yes_quantity < quantity:
+        messages.error(request, f"Insufficient YES contracts. You have {position.yes_quantity}.")
+        return redirect('predictions:market_detail', market_id=pk)
+    if position.no_quantity < quantity:
+        messages.error(request, f"Insufficient NO contracts. You have {position.no_quantity}.")
+        return redirect('predictions:market_detail', market_id=pk)
+
+    # Reserve both YES and NO shares
+    position.yes_quantity -= quantity
+    position.reserved_yes_quantity += quantity
+    position.no_quantity -= quantity
+    position.reserved_no_quantity += quantity
+    position.save()
+
+    # Create redeem request as special order type - engine will process
+    Order.objects.create(
+        user=request.user,
+        market=market,
+        side='sell',  # Conceptually selling/burning complete sets
+        contract_type='yes',  # Placeholder - redeeming burns both
+        order_type='redeem_set',
+        price=Decimal('1.00'),  # $1 per set payout
+        quantity=quantity,
+        status=Order.Status.OPEN
+    )
+
+    messages.success(request, f"Redeem request submitted for {quantity} complete sets. Processing...")
     return redirect('predictions:market_detail', market_id=pk)
 
 
