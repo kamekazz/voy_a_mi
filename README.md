@@ -1,7 +1,7 @@
 # Voy a Mi
 
 [![Python](https://img.shields.io/badge/Python-3.x-blue.svg)](https://www.python.org/)
-[![Django](https://img.shields.io/badge/Django-4.x-green.svg)](https://www.djangoproject.com/)
+[![Django](https://img.shields.io/badge/Django-5.x-green.svg)](https://www.djangoproject.com/)
 [![License](https://img.shields.io/badge/License-Open%20Source-brightgreen.svg)](#license)
 
 **Voy a Mi** is an open-source prediction market platform built with Django. It allows users to trade on the outcomes of real-world events by buying and selling YES/NO contracts that pay out based on the event results.
@@ -29,7 +29,11 @@ Each market uses **YES/NO contracts** that settle at:
 
 - **Order Book Matching Engine**: Full limit order book system similar to a stock exchange. Orders are matched based on price and time priority.
 
-- **Automated Market Maker (AMM)**: LMSR-based automated market maker provides instant liquidity for markets, ensuring markets are always tradeable.
+- **Complete Set Minting**: Polymarket-style minting - pay $1 to create 1 YES + 1 NO share pair. This ensures market liquidity.
+
+- **Complete Set Redemption**: Burn 1 YES + 1 NO share pair to receive $1 back.
+
+- **Mint/Merge Matching**: Complementary orders are automatically matched - BUY YES + BUY NO creates shares, SELL YES + SELL NO burns shares.
 
 - **Portfolio & Account Management**: Track positions, calculate profit/loss, review open orders, trade history, and transaction logs.
 
@@ -47,11 +51,11 @@ Each market uses **YES/NO contracts** that settle at:
 
 | Component | Technology |
 |-----------|------------|
-| **Backend** | Django 4 (Python 3) |
+| **Backend** | Django 5/6 (Python 3) |
 | **Database** | SQLite (dev) / PostgreSQL (prod) |
 | **Frontend** | Django Templates, Bootstrap 5, Bootstrap Icons |
 | **Real-Time** | Django Channels, WebSockets, Daphne (ASGI) |
-| **Trading Engine** | Custom order book + LMSR-based AMM |
+| **Trading Engine** | Custom order book with price-time priority matching |
 | **Payments** | Stripe & PayPal SDK (integration ready) |
 | **Deployment** | Gunicorn, Daphne, Nginx, Whitenoise |
 | **Config** | python-dotenv for environment variables |
@@ -90,15 +94,7 @@ python manage.py migrate
 python manage.py createsuperuser
 ```
 
-### 6. (Optional) Load Sample Data
-
-```bash
-python manage.py create_test_markets
-```
-
-This populates the database with example categories, events, and markets (~20 events, ~40 markets).
-
-### 7. Run the Development Server
+### 6. Run the Development Server
 
 ```bash
 python manage.py runserver
@@ -107,7 +103,7 @@ python manage.py runserver
 Open http://localhost:8000/ in your browser.
 
 
-### 8. Run the Matching Engine (Important!)
+### 7. Run the Matching Engine (Important!)
 
 The application uses a separate process to match orders. Without this running, orders will sit in the order book but trades won't execute.
 
@@ -126,12 +122,27 @@ You should see output indicating the engine is starting and processing trades.
 | `/` | Homepage with active markets |
 | `/events/` | Browse all events |
 | `/events/<slug>/` | Event detail with all markets |
-| `/markets/<id>/` | Market trading interface with orderbook |
+| `/market/<id>/` | Market trading interface with orderbook |
 | `/portfolio/` | User's positions and P&L |
 | `/orders/` | Order history |
 | `/trades/` | Trade history |
 | `/transactions/` | Balance transaction history |
+| `/login/` | User login |
+| `/logout/` | User logout |
+| `/register/` | User registration |
+| `/cancel_order/<id>/` | Cancel an order |
+| `/markets/<id>/mint/` | Mint complete set (1 YES + 1 NO) |
+| `/markets/<id>/redeem/` | Redeem complete set for $1 |
 | `/admin/` | Django admin panel |
+
+## API Endpoints
+
+| Path | Description |
+|------|-------------|
+| `/api/markets/<id>/orderbook/` | Order book JSON |
+| `/api/markets/<id>/trades/` | Recent trades JSON |
+| `/api/markets/<id>/position/` | User position JSON |
+| `/api/markets/<id>/price-history/` | Price history JSON |
 
 ## Production Deployment
 
@@ -172,7 +183,7 @@ When working on features, follow this standard git workflow to keep your branch 
 -   **Run Tests:** `python manage.py test`
 -   **Make Migrations:** `python manage.py makemigrations`
 -   **Migrate:** `python manage.py migrate`
--   **Create Test Markets:** `python manage.py create_test_markets`
+-   **Run Engine:** `python manage.py run_engine`
 
 ## Contributing
 
