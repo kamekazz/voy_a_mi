@@ -63,13 +63,12 @@ class BaseTestCase(TestCase):
             status=Event.Status.ACTIVE
         )
 
-        # Create test market (AMM disabled for orderbook tests)
+        # Create test market
         self.market = Market.objects.create(
             event=self.event,
             title='Test Market',
             slug='test-market',
-            status=Market.Status.ACTIVE,
-            amm_enabled=False
+            status=Market.Status.ACTIVE
         )
 
 
@@ -512,7 +511,7 @@ class SettlementTest(BaseTestCase):
 
     def test_settlement_cancels_open_orders(self):
         """Test that settlement cancels all open orders."""
-        from .matching_engine import settle_market
+        from .engine.matching import settle_market
         engine = MatchingEngine(self.market)
 
         # User3 places an open buy order
