@@ -149,14 +149,15 @@ class MatchingEngine:
             if available < quantity:
                 raise InsufficientPositionError(quantity, available, contract_type)
 
-        # Create the order
+        # Create the order (convert cents to dollars for storage)
+        price_dollars = Decimal(price) / 100
         order = Order.objects.create(
             market=self.market,
             user=user,
             side=side,
             contract_type=contract_type,
             order_type=order_type,
-            price=price,
+            price=price_dollars,
             quantity=quantity,
             status=Order.Status.OPEN
         )
@@ -295,9 +296,10 @@ class MatchingEngine:
         # Find complementary buy orders for the opposite contract type
         opposite_type = 'no' if incoming_order.contract_type == 'yes' else 'yes'
 
-        # For minting: YES_price + NO_price >= 100 cents (sum to >= $1)
-        # If incoming is BUY YES @ 60c, need BUY NO @ 40c or higher
-        min_complementary_price = 100 - incoming_order.price
+        # For minting: YES_price + NO_price >= $1.00 (sum to at least $1)
+        # If incoming is BUY YES @ $0.60, need BUY NO @ $0.40 or higher
+        # Prices are stored in dollars (0.01-0.99), so use $1.00 as base
+        min_complementary_price = Decimal('1.00') - incoming_order.price
 
         complementary_orders = Order.objects.filter(
             market=self.market,
@@ -335,9 +337,10 @@ class MatchingEngine:
 
         opposite_type = 'no' if incoming_order.contract_type == 'yes' else 'yes'
 
-        # For merging: YES_price + NO_price <= 100 cents (split $1 collateral)
-        # If incoming is SELL YES @ 55c, need SELL NO @ 45c or lower
-        max_complementary_price = 100 - incoming_order.price
+        # For merging: YES_price + NO_price <= $1.00 (split $1 collateral)
+        # If incoming is SELL YES @ $0.55, need SELL NO @ $0.45 or lower
+        # Prices are stored in dollars (0.01-0.99), so use $1.00 as base
+        max_complementary_price = Decimal('1.00') - incoming_order.price
 
         complementary_orders = Order.objects.filter(
             market=self.market,
@@ -371,8 +374,8 @@ class MatchingEngine:
             yes_order: The BUY YES order
             no_order: The BUY NO order
             quantity: Number of share pairs to mint
-            yes_price: Price YES buyer pays (cents)
-            no_price: Price NO buyer pays (cents)
+            yes_price: Price YES buyer pays (Decimal in dollars, e.g., 0.60)
+            no_price: Price NO buyer pays (Decimal in dollars, e.g., 0.40)
 
         Returns:
             Trade record for the mint operation
@@ -381,25 +384,29 @@ class MatchingEngine:
         yes_buyer = User.objects.select_for_update().get(pk=yes_order.user.pk)
         no_buyer = User.objects.select_for_update().get(pk=no_order.user.pk)
 
-        # Calculate costs
-        yes_cost = Decimal(yes_price * quantity) / 100
-        no_cost = Decimal(no_price * quantity) / 100
+        # Convert prices to cents for calculations that need cents (avg_cost, Market, Trade)
+        yes_price_cents = int(Decimal(yes_price) * 100)
+        no_price_cents = int(Decimal(no_price) * 100)
+
+        # Calculate costs (prices are in dollars, no conversion needed)
+        yes_cost = Decimal(yes_price) * quantity
+        no_cost = Decimal(no_price) * quantity
 
         # Release reserved funds and deduct actual costs for YES buyer
-        yes_reserved_release = Decimal(yes_order.price * quantity) / 100
+        yes_reserved_release = Decimal(yes_order.price) * quantity
         yes_buyer.reserved_balance -= yes_reserved_release
         yes_buyer.balance -= yes_cost  # Actually deduct the cost
         yes_buyer.save()
 
         # Release reserved funds and deduct actual costs for NO buyer
-        no_reserved_release = Decimal(no_order.price * quantity) / 100
+        no_reserved_release = Decimal(no_order.price) * quantity
         no_buyer.reserved_balance -= no_reserved_release
         no_buyer.balance -= no_cost  # Actually deduct the cost
         no_buyer.save()
 
-        # Update positions - each buyer gets their contract type
-        self._update_position_for_mint(yes_buyer, 'yes', quantity, yes_price)
-        self._update_position_for_mint(no_buyer, 'no', quantity, no_price)
+        # Update positions - each buyer gets their contract type (avg_cost stored in cents)
+        self._update_position_for_mint(yes_buyer, 'yes', quantity, yes_price_cents)
+        self._update_position_for_mint(no_buyer, 'no', quantity, no_price_cents)
 
         # Update order fill quantities
         yes_order.filled_quantity = F('filled_quantity') + quantity
@@ -416,15 +423,15 @@ class MatchingEngine:
                 order.status = Order.Status.PARTIALLY_FILLED
             order.save()
 
-        # Update market: new shares created
+        # Update market: new shares created (prices already converted to cents above)
         self.market.total_shares_outstanding = F('total_shares_outstanding') + quantity
         self.market.total_volume = F('total_volume') + quantity
-        self.market.last_yes_price = yes_price
-        self.market.last_no_price = 100 - yes_price
+        self.market.last_yes_price = yes_price_cents
+        self.market.last_no_price = 100 - yes_price_cents
         self.market.save()
         self.market.refresh_from_db()
 
-        # Create trade record
+        # Create trade record (price stored in cents for Trade model)
         trade = Trade.objects.create(
             market=self.market,
             buy_order=yes_order,
@@ -432,7 +439,7 @@ class MatchingEngine:
             buyer=yes_buyer,
             seller=no_buyer,  # Actually also a buyer (getting NO contracts)
             contract_type='yes',
-            price=yes_price,
+            price=yes_price_cents,
             quantity=quantity,
             trade_type=Trade.TradeType.MINT
         )
@@ -446,7 +453,7 @@ class MatchingEngine:
             balance_after=yes_buyer.balance,
             trade=trade,
             market=self.market,
-            description=f"Minted {quantity} YES @ {yes_price}c (paired with NO buyer)"
+            description=f"Minted {quantity} YES @ {yes_price_cents}c (paired with NO buyer)"
         )
 
         Transaction.objects.create(
@@ -457,7 +464,7 @@ class MatchingEngine:
             balance_after=no_buyer.balance,
             trade=trade,
             market=self.market,
-            description=f"Minted {quantity} NO @ {no_price}c (paired with YES buyer)"
+            description=f"Minted {quantity} NO @ {no_price_cents}c (paired with YES buyer)"
         )
 
         broadcast_trade_executed(trade)
@@ -475,8 +482,8 @@ class MatchingEngine:
             yes_order: The SELL YES order
             no_order: The SELL NO order
             quantity: Number of share pairs to merge
-            yes_price: Price YES seller receives (cents)
-            no_price: Price NO seller receives (cents)
+            yes_price: Price YES seller receives (Decimal in dollars, e.g., 0.55)
+            no_price: Price NO seller receives (Decimal in dollars, e.g., 0.45)
 
         Returns:
             Trade record for the merge operation
@@ -494,9 +501,13 @@ class MatchingEngine:
         if no_pos.no_quantity < quantity:
             raise InsufficientPositionError(quantity, no_pos.no_quantity, 'no')
 
-        # Calculate payouts
-        yes_payout = Decimal(yes_price * quantity) / 100
-        no_payout = Decimal(no_price * quantity) / 100
+        # Convert prices to cents for calculations that need cents
+        yes_price_cents = int(Decimal(yes_price) * 100)
+        no_price_cents = int(Decimal(no_price) * 100)
+
+        # Calculate payouts (prices are in dollars, no conversion needed)
+        yes_payout = Decimal(yes_price) * quantity
+        no_payout = Decimal(no_price) * quantity
 
         # Credit sellers
         yes_seller.balance += yes_payout
@@ -506,12 +517,13 @@ class MatchingEngine:
         no_seller.save()
 
         # Update positions - deduct contracts and calculate realized P&L
-        yes_pnl = Decimal(quantity) * (Decimal(yes_price) - yes_pos.yes_avg_cost) / 100
+        # avg_cost is stored in cents, so use cents for P&L calculation
+        yes_pnl = Decimal(quantity) * (Decimal(yes_price_cents) - yes_pos.yes_avg_cost) / 100
         yes_pos.yes_quantity -= quantity
         yes_pos.realized_pnl += yes_pnl
         yes_pos.save()
 
-        no_pnl = Decimal(quantity) * (Decimal(no_price) - no_pos.no_avg_cost) / 100
+        no_pnl = Decimal(quantity) * (Decimal(no_price_cents) - no_pos.no_avg_cost) / 100
         no_pos.no_quantity -= quantity
         no_pos.realized_pnl += no_pnl
         no_pos.save()
@@ -530,15 +542,15 @@ class MatchingEngine:
                 order.status = Order.Status.PARTIALLY_FILLED
             order.save()
 
-        # Update market: shares burned
+        # Update market: shares burned (prices in cents for Market model)
         self.market.total_shares_outstanding = F('total_shares_outstanding') - quantity
         self.market.total_volume = F('total_volume') + quantity
-        self.market.last_yes_price = yes_price
-        self.market.last_no_price = 100 - yes_price
+        self.market.last_yes_price = yes_price_cents
+        self.market.last_no_price = 100 - yes_price_cents
         self.market.save()
         self.market.refresh_from_db()
 
-        # Create trade record
+        # Create trade record (price in cents for Trade model)
         trade = Trade.objects.create(
             market=self.market,
             buy_order=yes_order,  # Reusing field for YES seller
@@ -546,7 +558,7 @@ class MatchingEngine:
             buyer=yes_seller,  # Actually a seller
             seller=no_seller,  # Actually also a seller
             contract_type='yes',
-            price=yes_price,
+            price=yes_price_cents,
             quantity=quantity,
             trade_type=Trade.TradeType.MERGE
         )
@@ -560,7 +572,7 @@ class MatchingEngine:
             balance_after=yes_seller.balance,
             trade=trade,
             market=self.market,
-            description=f"Merged {quantity} YES @ {yes_price}c (paired with NO seller)"
+            description=f"Merged {quantity} YES @ {yes_price_cents}c (paired with NO seller)"
         )
 
         Transaction.objects.create(
@@ -571,7 +583,7 @@ class MatchingEngine:
             balance_after=no_seller.balance,
             trade=trade,
             market=self.market,
-            description=f"Merged {quantity} NO @ {no_price}c (paired with YES seller)"
+            description=f"Merged {quantity} NO @ {no_price_cents}c (paired with YES seller)"
         )
 
         broadcast_trade_executed(trade)
@@ -611,7 +623,7 @@ class MatchingEngine:
             incoming_order: The new order that triggered the match
             resting_order: The existing order in the book
             quantity: Number of contracts to trade
-            price: Execution price (maker's price)
+            price: Execution price (maker's price, Decimal in dollars e.g., 0.60)
 
         Returns:
             Trade: The executed trade record
@@ -628,12 +640,15 @@ class MatchingEngine:
         buyer = User.objects.select_for_update().get(pk=buy_order.user.pk)
         seller = User.objects.select_for_update().get(pk=sell_order.user.pk)
 
-        # Calculate trade value in dollars
-        trade_value = Decimal(price * quantity) / 100
+        # Convert price to cents for calculations that need cents (avg_cost, Market, Trade)
+        price_cents = int(Decimal(price) * 100)
+
+        # Calculate trade value in dollars (prices are in dollars, no conversion needed)
+        trade_value = Decimal(price) * quantity
 
         # Update buyer's balance
         # Release reserved funds (at order's price), deduct actual cost (at execution price)
-        buyer_reserved_release = Decimal(buy_order.price * quantity) / 100
+        buyer_reserved_release = Decimal(buy_order.price) * quantity
         buyer.reserved_balance -= buyer_reserved_release
 
         # The difference between reserved and actual goes back to available balance
@@ -648,8 +663,8 @@ class MatchingEngine:
         seller.balance += trade_value
         seller.save()
 
-        # Update positions
-        self._update_positions(buyer, seller, buy_order.contract_type, quantity, price)
+        # Update positions (avg_cost stored in cents)
+        self._update_positions(buyer, seller, buy_order.contract_type, quantity, price_cents)
 
         # Update order fill quantities
         buy_order.filled_quantity = F('filled_quantity') + quantity
@@ -669,7 +684,7 @@ class MatchingEngine:
                 order.status = Order.Status.PARTIALLY_FILLED
             order.save()
 
-        # Create trade record
+        # Create trade record (price in cents for Trade model)
         trade = Trade.objects.create(
             market=self.market,
             buy_order=buy_order,
@@ -677,17 +692,17 @@ class MatchingEngine:
             buyer=buyer,
             seller=seller,
             contract_type=buy_order.contract_type,
-            price=price,
+            price=price_cents,
             quantity=quantity
         )
 
-        # Update market last price
+        # Update market last price (prices in cents for Market model)
         if buy_order.contract_type == 'yes':
-            self.market.last_yes_price = price
-            self.market.last_no_price = 100 - price
+            self.market.last_yes_price = price_cents
+            self.market.last_no_price = 100 - price_cents
         else:
-            self.market.last_no_price = price
-            self.market.last_yes_price = 100 - price
+            self.market.last_no_price = price_cents
+            self.market.last_yes_price = 100 - price_cents
         self.market.total_volume = F('total_volume') + quantity
         self.market.save()
 
@@ -850,10 +865,10 @@ class MatchingEngine:
         # Lock user for balance update
         user = User.objects.select_for_update().get(pk=user.pk)
 
-        # Release reserved funds for buy orders
+        # Release reserved funds for buy orders (prices are in dollars)
         if order.side == 'buy':
             remaining_qty = order.quantity - order.filled_quantity
-            release_amount = Decimal(order.price * remaining_qty) / 100
+            release_amount = Decimal(order.price) * remaining_qty
 
             user.reserved_balance -= release_amount
             user.save()
@@ -949,10 +964,10 @@ def settle_market(market, outcome):
 
     for order in open_orders:
         if order.side == 'buy':
-            # Release reserved funds
+            # Release reserved funds (prices are in dollars, no conversion needed)
             user = User.objects.select_for_update().get(pk=order.user.pk)
             remaining_qty = order.quantity - order.filled_quantity
-            release_amount = Decimal(order.price * remaining_qty) / 100
+            release_amount = Decimal(order.price) * remaining_qty
             user.reserved_balance -= release_amount
             user.save()
 
