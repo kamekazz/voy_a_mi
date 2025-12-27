@@ -8,7 +8,7 @@ from django.db.models import Q, F, Sum
 from django.utils import timezone
 from decimal import Decimal, InvalidOperation
 
-from .models import User, Category, Event, Market, Order, Trade, Position, Transaction, UserBalance
+from .models import User, Category, Event, Market, Order, Trade, Position, Transaction
 from .forms import UserRegistrationForm
 from .forms import OrderForm, QuickOrderForm
 from .engine.matching import get_orderbook
@@ -187,7 +187,7 @@ def place_order(request, pk):
         except (ValueError, TypeError):
              return HttpResponse("Invalid price")
 
-    user_balance, _ = UserBalance.objects.get_or_create(user=request.user)
+    user = request.user
     position, _ = Position.objects.get_or_create(user=request.user, market=market)
 
     if order_type == 'BUY':
@@ -195,11 +195,11 @@ def place_order(request, pk):
         # If Market Order, reserve max possible price ($1.00) to be safe
         reservation_price = price_val if price_val is not None else Decimal('1.00')
         total_cost = reservation_price * quantity
-        
-        if user_balance.balance >= total_cost:
-            user_balance.balance -= total_cost
-            user_balance.reserved_balance += total_cost
-            user_balance.save()
+
+        if user.balance >= total_cost:
+            user.balance -= total_cost
+            user.reserved_balance += total_cost
+            user.save()
         else:
             messages.error(request, "Insufficient funds")
             return redirect('predictions:market_detail', market_id=market.id)
@@ -267,7 +267,7 @@ def place_quick_bet(request, pk):
         return redirect('predictions:market_detail', market_id=pk)
 
     try:
-        user_balance, _ = UserBalance.objects.get_or_create(user=request.user)
+        user = request.user
         position, _ = Position.objects.get_or_create(user=request.user, market=market)
 
         if action == 'sell':
@@ -334,13 +334,13 @@ def place_quick_bet(request, pk):
 
             # Reserve funds (for market order, reserve at $1 max per share to be safe)
             reserve_amount = Decimal(quantity)  # $1 per share max
-            if user_balance.balance < reserve_amount:
-                messages.error(request, f"Insufficient balance. You have ${user_balance.balance:.2f}.")
+            if user.balance < reserve_amount:
+                messages.error(request, f"Insufficient balance. You have ${user.balance:.2f}.")
                 return redirect('predictions:market_detail', market_id=pk)
 
-            user_balance.balance -= reserve_amount
-            user_balance.reserved_balance += reserve_amount
-            user_balance.save()
+            user.balance -= reserve_amount
+            user.reserved_balance += reserve_amount
+            user.save()
 
             # Create market buy order - engine will process
             Order.objects.create(
@@ -374,7 +374,7 @@ def cancel_order(request, pk):
         return redirect('predictions:market_detail', market_id=market.id)
 
     # Get user balance and position
-    user_balance, _ = UserBalance.objects.get_or_create(user=request.user)
+    user = request.user
     position, _ = Position.objects.get_or_create(user=request.user, market=market)
 
     # Calculate remaining quantity (unfilled portion)
@@ -383,9 +383,9 @@ def cancel_order(request, pk):
     if order.order_type == 'mint_set':
         # Refund reserved funds for mint request
         refund = Decimal(remaining_qty)  # $1 per set
-        user_balance.reserved_balance -= refund
-        user_balance.balance += refund
-        user_balance.save()
+        user.reserved_balance -= refund
+        user.balance += refund
+        user.save()
 
     elif order.order_type == 'redeem_set':
         # Return reserved shares for redeem request
@@ -399,9 +399,9 @@ def cancel_order(request, pk):
         # Refund reserved funds for buy order
         refund_price = order.price if order.price is not None else Decimal('1.00')
         refund = refund_price * remaining_qty
-        user_balance.reserved_balance -= refund
-        user_balance.balance += refund
-        user_balance.save()
+        user.reserved_balance -= refund
+        user.balance += refund
+        user.save()
 
     elif order.side == 'sell':
         # Return reserved shares for sell order
@@ -445,16 +445,16 @@ def mint_complete_set_view(request, pk):
 
     cost = Decimal(quantity)  # $1 per complete set
 
-    user_balance, _ = UserBalance.objects.get_or_create(user=request.user)
+    user = request.user
 
-    if user_balance.balance < cost:
-        messages.error(request, f"Insufficient funds. Need ${cost:.2f}, have ${user_balance.balance:.2f}.")
+    if user.balance < cost:
+        messages.error(request, f"Insufficient funds. Need ${cost:.2f}, have ${user.balance:.2f}.")
         return redirect('predictions:market_detail', market_id=pk)
 
     # Reserve funds
-    user_balance.balance -= cost
-    user_balance.reserved_balance += cost
-    user_balance.save()
+    user.balance -= cost
+    user.reserved_balance += cost
+    user.save()
 
     # Create mint request as special order type - engine will process
     Order.objects.create(
