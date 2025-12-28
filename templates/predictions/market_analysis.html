@@ -1,0 +1,397 @@
+{% extends 'base.html' %}
+
+{% block title %}Market Analysis - Dev Tools{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <h1><i class="bi bi-graph-up"></i> Market Analysis</h1>
+        <p class="text-muted">Development tool for analyzing market economics and settlement scenarios</p>
+    </div>
+</div>
+
+<!-- Market Selector -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0"><i class="bi bi-search"></i> Select Market</h5>
+    </div>
+    <div class="card-body">
+        <form method="get" action="{% url 'predictions:market_analysis' %}" class="row g-3">
+            <div class="col-md-8">
+                <select name="market_id" class="form-select" onchange="this.form.submit()">
+                    <option value="">-- Select a market --</option>
+                    {% for m in markets %}
+                    <option value="{{ m.id }}" {% if selected_market and selected_market.id == m.id %}selected{% endif %}>
+                        #{{ m.id }} - {{ m.title }} ({{ m.status }})
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-4">
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="bi bi-bar-chart"></i> Analyze
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% if selected_market and analysis %}
+<!-- Market Overview -->
+<div class="card mb-4 border-primary">
+    <div class="card-header bg-primary text-white">
+        <h5 class="mb-0"><i class="bi bi-info-circle"></i> Market #{{ selected_market.id }}: {{ selected_market.title }}</h5>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-6">
+                <p><strong>Event:</strong> {{ selected_market.event.title }}</p>
+                <p><strong>Status:</strong>
+                    <span class="badge {% if selected_market.status == 'active' %}bg-success{% else %}bg-secondary{% endif %}">
+                        {{ selected_market.status|upper }}
+                    </span>
+                </p>
+            </div>
+            <div class="col-md-6">
+                <p><strong>YES Price:</strong> <span class="text-success">{{ selected_market.last_yes_price }}c</span></p>
+                <p><strong>NO Price:</strong> <span class="text-danger">{{ selected_market.last_no_price }}c</span></p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Summary Cards -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card bg-info text-white h-100">
+            <div class="card-body text-center">
+                <h6 class="card-subtitle mb-2 opacity-75">Total Trades</h6>
+                <h2 class="mb-0">{{ analysis.trades_count }}</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-success text-white h-100">
+            <div class="card-body text-center">
+                <h6 class="card-subtitle mb-2 opacity-75">YES Outstanding</h6>
+                <h2 class="mb-0">{{ analysis.total_yes }}</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-danger text-white h-100">
+            <div class="card-body text-center">
+                <h6 class="card-subtitle mb-2 opacity-75">NO Outstanding</h6>
+                <h2 class="mb-0">{{ analysis.total_no }}</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-warning text-dark h-100">
+            <div class="card-body text-center">
+                <h6 class="card-subtitle mb-2 opacity-75">Money Locked</h6>
+                <h2 class="mb-0">${{ analysis.net_locked|floatformat:2 }}</h2>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Trade Breakdown -->
+{% if analysis.trade_breakdown %}
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0"><i class="bi bi-arrow-left-right"></i> Trade Breakdown by Type</h5>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-hover mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Type</th>
+                    <th class="text-end">Count</th>
+                    <th class="text-end">Shares</th>
+                    <th class="text-end">Value</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for tb in analysis.trade_breakdown %}
+                <tr>
+                    <td>
+                        <span class="badge {% if tb.type == 'MINT' %}bg-primary{% elif tb.type == 'MERGE' %}bg-secondary{% else %}bg-info{% endif %}">
+                            {{ tb.type }}
+                        </span>
+                    </td>
+                    <td class="text-end">{{ tb.count }}</td>
+                    <td class="text-end">{{ tb.quantity }}</td>
+                    <td class="text-end">${{ tb.value_dollars|floatformat:2 }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<!-- Settlement Scenarios -->
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card h-100 border-success">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0"><i class="bi bi-check-circle"></i> IF YES WINS</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-sm mb-0">
+                        <thead>
+                            <tr>
+                                <th>User</th>
+                                <th class="text-end">YES Shares</th>
+                                <th class="text-end">Payout</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for p in analysis.positions %}
+                            {% if p.yes_qty > 0 %}
+                            <tr>
+                                <td>{{ p.username }}</td>
+                                <td class="text-end">{{ p.yes_qty }}</td>
+                                <td class="text-end text-success">${{ p.yes_qty|floatformat:2 }}</td>
+                            </tr>
+                            {% endif %}
+                            {% endfor %}
+                        </tbody>
+                        <tfoot class="table-light">
+                            <tr>
+                                <th>TOTAL</th>
+                                <th class="text-end">{{ analysis.total_yes }}</th>
+                                <th class="text-end text-success">${{ analysis.yes_payout|floatformat:2 }}</th>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card h-100 border-danger">
+            <div class="card-header bg-danger text-white">
+                <h5 class="mb-0"><i class="bi bi-x-circle"></i> IF NO WINS</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-sm mb-0">
+                        <thead>
+                            <tr>
+                                <th>User</th>
+                                <th class="text-end">NO Shares</th>
+                                <th class="text-end">Payout</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for p in analysis.positions %}
+                            {% if p.no_qty > 0 %}
+                            <tr>
+                                <td>{{ p.username }}</td>
+                                <td class="text-end">{{ p.no_qty }}</td>
+                                <td class="text-end text-danger">${{ p.no_qty|floatformat:2 }}</td>
+                            </tr>
+                            {% endif %}
+                            {% endfor %}
+                        </tbody>
+                        <tfoot class="table-light">
+                            <tr>
+                                <th>TOTAL</th>
+                                <th class="text-end">{{ analysis.total_no }}</th>
+                                <th class="text-end text-danger">${{ analysis.no_payout|floatformat:2 }}</th>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Admin/House Analysis -->
+<div class="card mb-4 border-warning">
+    <div class="card-header bg-warning text-dark">
+        <h5 class="mb-0"><i class="bi bi-bank"></i> Admin/House Analysis</h5>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-6">
+                <h6>Money Flow</h6>
+                <table class="table table-sm">
+                    <tr>
+                        <td>From TRADE_BUY:</td>
+                        <td class="text-end">${{ analysis.buy_total|floatformat:2 }}</td>
+                    </tr>
+                    <tr>
+                        <td>From MINT_MATCH:</td>
+                        <td class="text-end">${{ analysis.mint_total|floatformat:2 }}</td>
+                    </tr>
+                    <tr>
+                        <td>From TRADE_SELL:</td>
+                        <td class="text-end">${{ analysis.sell_total|floatformat:2 }}</td>
+                    </tr>
+                    <tr>
+                        <td>From MERGE_MATCH:</td>
+                        <td class="text-end">${{ analysis.merge_total|floatformat:2 }}</td>
+                    </tr>
+                    <tr class="table-warning">
+                        <th>Net Locked:</th>
+                        <th class="text-end">${{ analysis.net_locked|floatformat:2 }}</th>
+                    </tr>
+                </table>
+            </div>
+            <div class="col-md-6">
+                <h6>Settlement Profit/Loss</h6>
+                <div class="alert alert-success">
+                    <strong>If YES wins:</strong><br>
+                    Payout: ${{ analysis.yes_payout|floatformat:2 }}<br>
+                    <strong>Admin Profit: ${{ analysis.admin_profit_yes|floatformat:2 }}</strong>
+                </div>
+                <div class="alert alert-danger">
+                    <strong>If NO wins:</strong><br>
+                    Payout: ${{ analysis.no_payout|floatformat:2 }}<br>
+                    <strong>Admin Profit: ${{ analysis.admin_profit_no|floatformat:2 }}</strong>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- All Positions -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0"><i class="bi bi-people"></i> All Positions</h5>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-hover mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>User</th>
+                    <th class="text-end">YES</th>
+                    <th class="text-end">NO</th>
+                    <th class="text-end">Total</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in analysis.positions %}
+                <tr>
+                    <td>{{ p.username }}</td>
+                    <td class="text-end text-success">{{ p.yes_qty }}</td>
+                    <td class="text-end text-danger">{{ p.no_qty }}</td>
+                    <td class="text-end"><strong>{{ p.total }}</strong></td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="4" class="text-center text-muted">No positions found</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+            <tfoot class="table-dark">
+                <tr>
+                    <th>TOTAL</th>
+                    <th class="text-end">{{ analysis.total_yes }}</th>
+                    <th class="text-end">{{ analysis.total_no }}</th>
+                    <th class="text-end">{{ analysis.total_yes|add:analysis.total_no }}</th>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+</div>
+
+<!-- Transaction Breakdown -->
+{% if analysis.tx_breakdown %}
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0"><i class="bi bi-receipt"></i> Transaction Breakdown</h5>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-hover mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Type</th>
+                    <th class="text-end">Count</th>
+                    <th class="text-end">Amount</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for tx in analysis.tx_breakdown %}
+                <tr>
+                    <td><code>{{ tx.type }}</code></td>
+                    <td class="text-end">{{ tx.count }}</td>
+                    <td class="text-end {% if tx.amount < 0 %}text-danger{% else %}text-success{% endif %}">
+                        ${{ tx.amount|floatformat:2 }}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<!-- Recent Trades -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0"><i class="bi bi-clock-history"></i> Recent Trades</h5>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Time</th>
+                    <th>Type</th>
+                    <th>Contract</th>
+                    <th class="text-end">Qty</th>
+                    <th class="text-end">Price</th>
+                    <th>Buyer</th>
+                    <th>Seller</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for trade in analysis.recent_trades %}
+                <tr>
+                    <td><small>{{ trade.executed_at|date:"m/d H:i" }}</small></td>
+                    <td>
+                        <span class="badge {% if trade.trade_type == 'mint' %}bg-primary{% elif trade.trade_type == 'merge' %}bg-secondary{% else %}bg-info{% endif %}">
+                            {{ trade.trade_type|upper }}
+                        </span>
+                    </td>
+                    <td>
+                        <span class="badge {% if trade.contract_type == 'yes' %}bg-success{% else %}bg-danger{% endif %}">
+                            {{ trade.contract_type|upper }}
+                        </span>
+                    </td>
+                    <td class="text-end">{{ trade.quantity }}</td>
+                    <td class="text-end">{{ trade.price }}c</td>
+                    <td><small>{{ trade.buyer.username }}</small></td>
+                    <td><small>{{ trade.seller.username }}</small></td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="7" class="text-center text-muted">No trades found</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% if analysis.trades_count > 30 %}
+    <div class="card-footer text-muted text-center">
+        Showing 30 of {{ analysis.trades_count }} trades
+    </div>
+    {% endif %}
+</div>
+
+{% elif selected_market %}
+<div class="alert alert-warning">
+    <i class="bi bi-exclamation-triangle"></i> No analysis data available for this market.
+</div>
+{% else %}
+<div class="alert alert-info">
+    <i class="bi bi-info-circle"></i> Select a market above to view its analysis.
+</div>
+{% endif %}
+
+{% endblock %}

@@ -997,3 +997,119 @@ def register(request):
         form = UserRegistrationForm()
 
     return render(request, 'registration/register.html', {'form': form})
+
+
+def market_analysis(request, pk=None):
+    """
+    Market analysis page for development/testing.
+    Shows detailed breakdown of market economics, positions, and settlement scenarios.
+    """
+    markets = Market.objects.select_related('event').order_by('-id')
+
+    context = {
+        'markets': markets,
+        'selected_market': None,
+        'analysis': None,
+    }
+
+    # If a market is selected (via pk or GET param)
+    market_id = pk or request.GET.get('market_id')
+    if market_id:
+        try:
+            market = Market.objects.select_related('event').get(id=market_id)
+            context['selected_market'] = market
+
+            # Get all trades
+            trades = Trade.objects.filter(market=market).select_related('buyer', 'seller')
+
+            # Breakdown by trade type
+            trade_breakdown = []
+            for tt in ['direct', 'mint', 'merge']:
+                t = trades.filter(trade_type=tt)
+                if t.exists():
+                    total_qty = t.aggregate(Sum('quantity'))['quantity__sum'] or 0
+                    total_value = sum(tr.quantity * tr.price for tr in t)
+                    trade_breakdown.append({
+                        'type': tt.upper(),
+                        'count': t.count(),
+                        'quantity': total_qty,
+                        'value_cents': total_value,
+                        'value_dollars': total_value / 100,
+                    })
+
+            # Get all positions
+            positions = Position.objects.filter(market=market).select_related('user')
+            position_details = []
+            total_yes = 0
+            total_no = 0
+
+            for pos in positions:
+                yes_qty = pos.yes_quantity + pos.reserved_yes_quantity
+                no_qty = pos.no_quantity + pos.reserved_no_quantity
+                if yes_qty > 0 or no_qty > 0:
+                    position_details.append({
+                        'username': pos.user.username,
+                        'yes_qty': yes_qty,
+                        'no_qty': no_qty,
+                        'total': yes_qty + no_qty,
+                    })
+                    total_yes += yes_qty
+                    total_no += no_qty
+
+            # Sort by total holdings
+            position_details.sort(key=lambda x: -x['total'])
+
+            # Transaction analysis
+            txns = Transaction.objects.filter(market=market)
+            tx_breakdown = []
+            tx_types = ['trade_buy', 'trade_sell', 'mint_match', 'merge_match', 'order_reserve', 'order_release']
+            for tx_type in tx_types:
+                t = txns.filter(type=tx_type)
+                if t.exists():
+                    total = t.aggregate(Sum('amount'))['amount__sum'] or Decimal(0)
+                    tx_breakdown.append({
+                        'type': tx_type.upper(),
+                        'count': t.count(),
+                        'amount': total,
+                    })
+
+            # Money flow calculations
+            buy_total = abs(txns.filter(type='trade_buy').aggregate(Sum('amount'))['amount__sum'] or Decimal(0))
+            mint_total = abs(txns.filter(type='mint_match').aggregate(Sum('amount'))['amount__sum'] or Decimal(0))
+            sell_total = txns.filter(type='trade_sell').aggregate(Sum('amount'))['amount__sum'] or Decimal(0)
+            merge_total = txns.filter(type='merge_match').aggregate(Sum('amount'))['amount__sum'] or Decimal(0)
+
+            net_locked = buy_total + mint_total - sell_total - merge_total
+
+            # Settlement scenarios
+            yes_payout = Decimal(total_yes)
+            no_payout = Decimal(total_no)
+            admin_profit_yes = net_locked - yes_payout
+            admin_profit_no = net_locked - no_payout
+
+            # Recent trades for display
+            recent_trades = trades.order_by('-executed_at')[:30]
+
+            context['analysis'] = {
+                'trades_count': trades.count(),
+                'trade_breakdown': trade_breakdown,
+                'positions': position_details,
+                'total_yes': total_yes,
+                'total_no': total_no,
+                'tx_breakdown': tx_breakdown,
+                'buy_total': buy_total,
+                'mint_total': mint_total,
+                'sell_total': sell_total,
+                'merge_total': merge_total,
+                'net_locked': net_locked,
+                'yes_payout': yes_payout,
+                'no_payout': no_payout,
+                'admin_profit_yes': admin_profit_yes,
+                'admin_profit_no': admin_profit_no,
+                'recent_trades': recent_trades,
+            }
+
+        except Market.DoesNotExist:
+            messages.error(request, f'Market {market_id} not found.')
+
+    return render(request, 'predictions/market_analysis.html', context)
