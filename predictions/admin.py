@@ -125,7 +125,7 @@ class EventAdmin(admin.ModelAdmin):
 class MarketAdmin(admin.ModelAdmin):
     list_display = [
         'thumbnail_preview', 'title', 'event_link', 'status', 'yes_price_display', 'no_price_display',
-        'spread_display', 'total_volume', 'order_count'
+        'spread_display', 'total_volume', 'fees_display', 'order_count'
     ]
     list_filter = ['status', 'event__category', 'event__status']
     search_fields = ['title', 'event__title']
@@ -133,7 +133,7 @@ class MarketAdmin(admin.ModelAdmin):
     readonly_fields = [
         'last_yes_price', 'last_no_price',
         'best_yes_bid', 'best_yes_ask', 'best_no_bid', 'best_no_ask',
-        'total_volume', 'volume_24h', 'created_at'
+        'total_volume', 'volume_24h', 'fees_collected', 'created_at'
     ]
 
     fieldsets = (
@@ -151,8 +151,9 @@ class MarketAdmin(admin.ModelAdmin):
                 ('best_no_bid', 'best_no_ask'),
             )
         }),
-        ('Volume', {
-            'fields': ('total_volume', 'volume_24h')
+        ('Volume & Fees', {
+            'fields': ('total_volume', 'volume_24h', 'fees_collected'),
+            'description': 'Fees collected represents the 2% transaction fee profit from this market.'
         }),
         ('Settings', {
             'fields': ('is_mutually_exclusive',)
@@ -178,6 +179,11 @@ class MarketAdmin(admin.ModelAdmin):
             return f'{spread}c'
         return '-'
     spread_display.short_description = 'Spread'
+
+    def fees_display(self, obj):
+        return format_html('<span style="color: green;">${}</span>', f'{obj.fees_collected:.2f}')
+    fees_display.short_description = 'Fees Profit'
+    fees_display.admin_order_field = 'fees_collected'
 
     def order_count(self, obj):
         return obj.orders.filter(status__in=['open', 'partial']).count()

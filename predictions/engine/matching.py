@@ -36,6 +36,9 @@ class MatchingEngine:
     - Market: Price determined automatically from best available in orderbook
     """
 
+    # Transaction fee percentage (2%)
+    FEE_PERCENTAGE = Decimal('0.02')
+
     def __init__(self, market):
         self.market = market
 
@@ -392,17 +395,27 @@ class MatchingEngine:
         yes_cost = Decimal(yes_price) * quantity
         no_cost = Decimal(no_price) * quantity
 
-        # Release reserved funds and deduct actual costs for YES buyer
+        # Calculate 2% transaction fee for each buyer
+        yes_fee = yes_cost * self.FEE_PERCENTAGE
+        no_fee = no_cost * self.FEE_PERCENTAGE
+        total_fees = yes_fee + no_fee
+
+        # Release reserved funds and deduct actual costs + fee for YES buyer
         yes_reserved_release = Decimal(yes_order.price) * quantity
         yes_buyer.reserved_balance -= yes_reserved_release
-        yes_buyer.balance -= yes_cost  # Actually deduct the cost
+        yes_buyer.balance -= (yes_cost + yes_fee)  # Deduct cost plus fee
         yes_buyer.save()
 
-        # Release reserved funds and deduct actual costs for NO buyer
+        # Release reserved funds and deduct actual costs + fee for NO buyer
         no_reserved_release = Decimal(no_order.price) * quantity
         no_buyer.reserved_balance -= no_reserved_release
-        no_buyer.balance -= no_cost  # Actually deduct the cost
+        no_buyer.balance -= (no_cost + no_fee)  # Deduct cost plus fee
         no_buyer.save()
+
+        # Track fees collected by the market
+        from django.db.models import F as ModelF
+        self.market.fees_collected = ModelF('fees_collected') + total_fees
+        self.market.save(update_fields=['fees_collected'])
 
         # Update positions - each buyer gets their contract type (avg_cost stored in cents)
         self._update_position_for_mint(yes_buyer, 'yes', quantity, yes_price_cents)
@@ -445,26 +458,52 @@ class MatchingEngine:
         )
 
         # Create transaction records (balance was already updated, so calculate before from current)
+        yes_total_cost = yes_cost + yes_fee
         Transaction.objects.create(
             user=yes_buyer,
             type=Transaction.Type.MINT_MATCH,
             amount=-yes_cost,
-            balance_before=yes_buyer.balance + yes_cost,
-            balance_after=yes_buyer.balance,
+            balance_before=yes_buyer.balance + yes_total_cost,
+            balance_after=yes_buyer.balance + yes_fee,  # Before fee was deducted
             trade=trade,
             market=self.market,
             description=f"Minted {quantity} YES @ {yes_price_cents}c (paired with NO buyer)"
         )
 
+        # Fee transaction for YES buyer
+        Transaction.objects.create(
+            user=yes_buyer,
+            type=Transaction.Type.TRANSACTION_FEE,
+            amount=-yes_fee,
+            balance_before=yes_buyer.balance + yes_fee,
+            balance_after=yes_buyer.balance,
+            trade=trade,
+            market=self.market,
+            description=f"Transaction fee (2%) on mint of {quantity} YES"
+        )
+
+        no_total_cost = no_cost + no_fee
         Transaction.objects.create(
             user=no_buyer,
             type=Transaction.Type.MINT_MATCH,
             amount=-no_cost,
-            balance_before=no_buyer.balance + no_cost,
-            balance_after=no_buyer.balance,
+            balance_before=no_buyer.balance + no_total_cost,
+            balance_after=no_buyer.balance + no_fee,  # Before fee was deducted
             trade=trade,
             market=self.market,
             description=f"Minted {quantity} NO @ {no_price_cents}c (paired with YES buyer)"
+        )
+
+        # Fee transaction for NO buyer
+        Transaction.objects.create(
+            user=no_buyer,
+            type=Transaction.Type.TRANSACTION_FEE,
+            amount=-no_fee,
+            balance_before=no_buyer.balance + no_fee,
+            balance_after=no_buyer.balance,
+            trade=trade,
+            market=self.market,
+            description=f"Transaction fee (2%) on mint of {quantity} NO"
         )
 
         broadcast_trade_executed(trade)
@@ -509,12 +548,22 @@ class MatchingEngine:
         yes_payout = Decimal(yes_price) * quantity
         no_payout = Decimal(no_price) * quantity
 
-        # Credit sellers
-        yes_seller.balance += yes_payout
+        # Calculate 2% transaction fee for each seller
+        yes_fee = yes_payout * self.FEE_PERCENTAGE
+        no_fee = no_payout * self.FEE_PERCENTAGE
+        total_fees = yes_fee + no_fee
+
+        # Credit sellers (minus fee)
+        yes_seller.balance += (yes_payout - yes_fee)
         yes_seller.save()
 
-        no_seller.balance += no_payout
+        no_seller.balance += (no_payout - no_fee)
         no_seller.save()
+
+        # Track fees collected by the market
+        from django.db.models import F as ModelF
+        self.market.fees_collected = ModelF('fees_collected') + total_fees
+        self.market.save(update_fields=['fees_collected'])
 
         # Update positions - deduct contracts and calculate realized P&L
         # avg_cost is stored in cents, so use cents for P&L calculation
@@ -563,27 +612,53 @@ class MatchingEngine:
             trade_type=Trade.TradeType.MERGE
         )
 
-        # Create transaction records
+        # Create transaction records (with fees)
+        yes_net_payout = yes_payout - yes_fee
         Transaction.objects.create(
             user=yes_seller,
             type=Transaction.Type.MERGE_MATCH,
-            amount=yes_payout,
-            balance_before=yes_seller.balance - yes_payout,
+            amount=yes_net_payout,
+            balance_before=yes_seller.balance - yes_net_payout,
             balance_after=yes_seller.balance,
             trade=trade,
             market=self.market,
-            description=f"Merged {quantity} YES @ {yes_price_cents}c (paired with NO seller)"
+            description=f"Merged {quantity} YES @ {yes_price_cents}c (after 2% fee)"
         )
 
+        # Fee transaction for YES seller
+        Transaction.objects.create(
+            user=yes_seller,
+            type=Transaction.Type.TRANSACTION_FEE,
+            amount=-yes_fee,
+            balance_before=yes_seller.balance + yes_fee,
+            balance_after=yes_seller.balance,
+            trade=trade,
+            market=self.market,
+            description=f"Transaction fee (2%) on merge of {quantity} YES"
+        )
+
+        no_net_payout = no_payout - no_fee
         Transaction.objects.create(
             user=no_seller,
             type=Transaction.Type.MERGE_MATCH,
-            amount=no_payout,
-            balance_before=no_seller.balance - no_payout,
+            amount=no_net_payout,
+            balance_before=no_seller.balance - no_net_payout,
             balance_after=no_seller.balance,
             trade=trade,
             market=self.market,
-            description=f"Merged {quantity} NO @ {no_price_cents}c (paired with YES seller)"
+            description=f"Merged {quantity} NO @ {no_price_cents}c (after 2% fee)"
+        )
+
+        # Fee transaction for NO seller
+        Transaction.objects.create(
+            user=no_seller,
+            type=Transaction.Type.TRANSACTION_FEE,
+            amount=-no_fee,
+            balance_before=no_seller.balance + no_fee,
+            balance_after=no_seller.balance,
+            trade=trade,
+            market=self.market,
+            description=f"Transaction fee (2%) on merge of {quantity} NO"
         )
 
         broadcast_trade_executed(trade)
@@ -646,6 +721,9 @@ class MatchingEngine:
         # Calculate trade value in dollars (prices are in dollars, no conversion needed)
         trade_value = Decimal(price) * quantity
 
+        # Calculate 2% transaction fee (deducted from seller's proceeds)
+        fee_amount = trade_value * self.FEE_PERCENTAGE
+
         # Update buyer's balance
         # Release reserved funds (at order's price), deduct actual cost (at execution price)
         buyer_reserved_release = Decimal(buy_order.price) * quantity
@@ -659,9 +737,15 @@ class MatchingEngine:
 
         buyer.save()
 
-        # Update seller's balance (receive payment)
-        seller.balance += trade_value
+        # Update seller's balance (receive payment minus fee)
+        seller_proceeds = trade_value - fee_amount
+        seller.balance += seller_proceeds
         seller.save()
+
+        # Track fee collected by the market
+        from django.db.models import F as ModelF
+        self.market.fees_collected = ModelF('fees_collected') + fee_amount
+        self.market.save(update_fields=['fees_collected'])
 
         # Update positions (avg_cost stored in cents)
         self._update_positions(buyer, seller, buy_order.contract_type, quantity, price_cents)
@@ -712,8 +796,8 @@ class MatchingEngine:
         # Broadcast the trade execution via WebSocket
         broadcast_trade_executed(trade)
 
-        # Create transaction records
-        self._create_trade_transactions(trade, buyer, seller, trade_value)
+        # Create transaction records (with fee)
+        self._create_trade_transactions(trade, buyer, seller, trade_value, fee_amount)
 
         return trade
 
@@ -764,8 +848,8 @@ class MatchingEngine:
         buyer_pos.save()
         seller_pos.save()
 
-    def _create_trade_transactions(self, trade, buyer, seller, trade_value):
-        """Create transaction records for a trade."""
+    def _create_trade_transactions(self, trade, buyer, seller, trade_value, fee_amount):
+        """Create transaction records for a trade including fee."""
         # Buyer transaction (debit)
         Transaction.objects.create(
             user=buyer,
@@ -779,17 +863,30 @@ class MatchingEngine:
             description=f"Bought {trade.quantity} {trade.contract_type.upper()} @ {trade.price}c"
         )
 
-        # Seller transaction (credit)
+        # Seller transaction (credit - minus fee)
+        seller_proceeds = trade_value - fee_amount
         Transaction.objects.create(
             user=seller,
             type=Transaction.Type.TRADE_SELL,
-            amount=trade_value,
-            balance_before=seller.balance - trade_value,
+            amount=seller_proceeds,
+            balance_before=seller.balance - seller_proceeds,
             balance_after=seller.balance,
             order=trade.sell_order,
             trade=trade,
             market=self.market,
-            description=f"Sold {trade.quantity} {trade.contract_type.upper()} @ {trade.price}c"
+            description=f"Sold {trade.quantity} {trade.contract_type.upper()} @ {trade.price}c (after 2% fee)"
+        )
+
+        # Fee transaction record for seller
+        Transaction.objects.create(
+            user=seller,
+            type=Transaction.Type.TRANSACTION_FEE,
+            amount=-fee_amount,
+            balance_before=seller.balance + fee_amount,
+            balance_after=seller.balance,
+            trade=trade,
+            market=self.market,
+            description=f"Transaction fee (2%) on sale of {trade.quantity} {trade.contract_type.upper()}"
         )
 
     def _update_market_quotes(self):
@@ -1080,15 +1177,21 @@ def mint_complete_set(market, user, quantity):
         raise InvalidQuantityError(quantity)
 
     cost = Decimal(quantity)  # $1 per set
+    fee = cost * Decimal('0.02')  # 2% transaction fee
+    total_cost = cost + fee
 
     user = User.objects.select_for_update().get(pk=user.pk)
 
-    if user.available_balance < cost:
-        raise InsufficientFundsError(cost, user.available_balance)
+    if user.available_balance < total_cost:
+        raise InsufficientFundsError(total_cost, user.available_balance)
 
     balance_before = user.balance
-    user.balance -= cost
+    user.balance -= total_cost
     user.save()
+
+    # Track fee collected by the market
+    market.fees_collected = F('fees_collected') + fee
+    market.save(update_fields=['fees_collected'])
 
     # Get or create position
     position, _ = Position.objects.get_or_create(user=user, market=market)
@@ -1124,20 +1227,33 @@ def mint_complete_set(market, user, quantity):
     market.save()
     market.refresh_from_db()
 
-    # Create transaction
+    # Create transaction for the mint
     Transaction.objects.create(
         user=user,
         type=Transaction.Type.MINT,
         amount=-cost,
         balance_before=balance_before,
-        balance_after=user.balance,
+        balance_after=user.balance + fee,  # Before fee was deducted
         market=market,
         description=f"Minted {quantity} complete sets (YES+NO) @ $1/set"
+    )
+
+    # Create transaction for the fee
+    Transaction.objects.create(
+        user=user,
+        type=Transaction.Type.TRANSACTION_FEE,
+        amount=-fee,
+        balance_before=user.balance + fee,
+        balance_after=user.balance,
+        market=market,
+        description=f"Transaction fee (2%) on minting {quantity} complete sets"
     )
 
     return {
         'quantity': quantity,
         'cost': cost,
+        'fee': fee,
+        'total_cost': total_cost,
         'yes_received': quantity,
         'no_received': quantity
     }
@@ -1180,6 +1296,8 @@ def redeem_complete_set(market, user, quantity):
         raise InsufficientPositionError(quantity, position.no_quantity, 'no')
 
     payout = Decimal(quantity)  # $1 per set
+    fee = payout * Decimal('0.02')  # 2% transaction fee
+    net_payout = payout - fee
 
     # Calculate realized P&L (redeeming at 50c each, since pair = $1)
     yes_pnl = Decimal(quantity * (50 - float(position.yes_avg_cost))) / 100
@@ -1191,30 +1309,47 @@ def redeem_complete_set(market, user, quantity):
     position.realized_pnl += yes_pnl + no_pnl
     position.save()
 
-    # Credit user
+    # Credit user (minus fee)
     balance_before = user.balance
-    user.balance += payout
+    user.balance += net_payout
     user.save()
+
+    # Track fee collected by the market
+    market.fees_collected = F('fees_collected') + fee
+    market.save(update_fields=['fees_collected'])
 
     # Update market shares outstanding
     market.total_shares_outstanding = F('total_shares_outstanding') - quantity
     market.save()
     market.refresh_from_db()
 
-    # Create transaction
+    # Create transaction for the redeem
     Transaction.objects.create(
         user=user,
         type=Transaction.Type.REDEEM,
-        amount=payout,
+        amount=net_payout,
         balance_before=balance_before,
         balance_after=user.balance,
         market=market,
-        description=f"Redeemed {quantity} complete sets (YES+NO) @ $1/set"
+        description=f"Redeemed {quantity} complete sets (YES+NO) @ $1/set (after 2% fee)"
+    )
+
+    # Create transaction for the fee
+    Transaction.objects.create(
+        user=user,
+        type=Transaction.Type.TRANSACTION_FEE,
+        amount=-fee,
+        balance_before=balance_before + payout,
+        balance_after=user.balance,
+        market=market,
+        description=f"Transaction fee (2%) on redemption of {quantity} complete sets"
     )
 
     return {
         'quantity': quantity,
         'payout': payout,
+        'fee': fee,
+        'net_payout': net_payout,
         'yes_burned': quantity,
         'no_burned': quantity
     }

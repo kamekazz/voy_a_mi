@@ -207,6 +207,14 @@ class Market(models.Model):
         help_text="Total YES/NO pairs minted (equals collateral locked in dollars)"
     )
 
+    # Fee tracking for profit per market
+    fees_collected = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text="Total transaction fees collected from this market"
+    )
+
     # For multi-outcome events
     is_mutually_exclusive = models.BooleanField(
         default=True,
@@ -548,6 +556,8 @@ class Transaction(models.Model):
         REDEEM = 'redeem', 'Redeem (Burn Complete Set)'
         MINT_MATCH = 'mint_match', 'Mint via Order Match'
         MERGE_MATCH = 'merge_match', 'Merge via Order Match'
+        # Transaction fee
+        TRANSACTION_FEE = 'transaction_fee', 'Transaction Fee'
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,

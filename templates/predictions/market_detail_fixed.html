@@ -202,8 +202,18 @@
                     <span id="preview-avg-price" class="preview-value">--</span>
                 </div>
 
+                <div class="preview-row">
+                    <span class="preview-label" id="preview-cost-label">Subtotal</span>
+                    <span id="preview-subtotal" class="preview-value">--</span>
+                </div>
+
+                <div class="preview-row fee-highlight">
+                    <span class="preview-label">Transaction Fee (2%)</span>
+                    <span id="preview-fee" class="preview-value">--</span>
+                </div>
+
                 <div class="preview-row highlight">
-                    <span class="preview-label" id="preview-cost-label">Estimated Cost</span>
+                    <span class="preview-label" id="preview-total-label">Total Cost</span>
                     <span id="preview-total-cost" class="preview-value">--</span>
                 </div>
 
@@ -491,6 +501,9 @@
         });
     }
 
+    // Transaction fee percentage (2%)
+    var MODAL_FEE_PERCENTAGE = 0.02;
+
     function displayOrderPreview(preview, orderData) {
         var modal = document.getElementById('order-confirm-modal');
         var actionText = orderData.action.toUpperCase() + ' ' + orderData.contract_type.toUpperCase();
@@ -504,15 +517,30 @@
         document.getElementById('preview-shares').textContent = preview.shares + ' shares';
         document.getElementById('preview-avg-price').textContent = preview.avg_price + 'c';
 
-        // Update cost/proceeds label and value
+        // Calculate fee (2%)
+        var subtotal = isBuy ? preview.total_cost : preview.total_proceeds;
+        var fee = subtotal * MODAL_FEE_PERCENTAGE;
+        var totalWithFee = isBuy ? (subtotal + fee) : (subtotal - fee);
+
+        // Update subtotal, fee, and total
+        var subtotalEl = document.getElementById('preview-subtotal');
+        var feeEl = document.getElementById('preview-fee');
         var costLabel = document.getElementById('preview-cost-label');
+        var totalLabel = document.getElementById('preview-total-label');
         var costValue = document.getElementById('preview-total-cost');
+
         if (isBuy) {
-            costLabel.textContent = 'Estimated Cost';
-            costValue.textContent = '$' + preview.total_cost.toFixed(2);
+            costLabel.textContent = 'Subtotal';
+            subtotalEl.textContent = '$' + subtotal.toFixed(2);
+            feeEl.textContent = '+$' + fee.toFixed(2);
+            totalLabel.textContent = 'Total Cost';
+            costValue.textContent = '$' + totalWithFee.toFixed(2);
         } else {
-            costLabel.textContent = 'You Receive';
-            costValue.textContent = '$' + preview.total_proceeds.toFixed(2);
+            costLabel.textContent = 'Proceeds';
+            subtotalEl.textContent = '$' + subtotal.toFixed(2);
+            feeEl.textContent = '-$' + fee.toFixed(2);
+            totalLabel.textContent = 'You Receive';
+            costValue.textContent = '$' + totalWithFee.toFixed(2);
         }
 
         // Payout label based on contract type
@@ -520,8 +548,8 @@
         document.querySelector('.preview-row.potential .preview-label').textContent = payoutLabel;
         document.getElementById('preview-payout').textContent = '$' + preview.potential_payout.toFixed(2);
 
-        // Calculate profit
-        var cost = isBuy ? preview.total_cost : 0;
+        // Calculate profit (including fee)
+        var cost = isBuy ? totalWithFee : 0;
         var profit = preview.potential_payout - cost;
         var profitEl = document.getElementById('preview-profit');
         profitEl.textContent = (profit >= 0 ? '+' : '') + '$' + profit.toFixed(2);
@@ -712,6 +740,47 @@
         margin: 8px -16px;
         padding: 12px 16px;
         border-radius: 8px;
+    }
+
+    .preview-row.fee-highlight {
+        background: rgba(245, 158, 11, 0.1);
+        margin: 4px -16px;
+        padding: 8px 16px;
+        border-radius: 6px;
+        font-size: 0.85rem;
+    }
+
+    .preview-row.fee-highlight .preview-label {
+        color: #F59E0B;
+    }
+
+    .preview-row.fee-highlight .preview-value {
+        color: #F59E0B;
+    }
+
+    /* Order summary fee styling */
+    .order-summary .fee-row {
+        background: rgba(245, 158, 11, 0.1);
+        margin: 4px -12px;
+        padding: 8px 12px;
+        border-radius: 6px;
+    }
+
+    .order-summary .fee-row span:first-child {
+        color: #F59E0B;
+        font-size: 0.85rem;
+    }
+
+    .order-summary .fee-row span:last-child {
+        color: #F59E0B;
+        font-weight: 600;
+    }
+
+    .order-summary .total-row {
+        font-weight: 600;
+        border-top: 1px solid var(--border-color);
+        padding-top: 8px;
+        margin-top: 4px;
     }
 
     .preview-label {
@@ -986,7 +1055,10 @@
         updateQuickBetEstimate();
     }
 
-    // Update Quick Bet estimates
+    // Transaction fee percentage (2%)
+    const FEE_PERCENTAGE = 0.02;
+
+    // Update Quick Bet estimates (fee only shown in modal popup)
     function updateQuickBetEstimate() {
         const amountInput = document.getElementById('quick_amount');
         const yesRadio = document.getElementById('quick_type_yes');
@@ -1004,15 +1076,19 @@
 
         if (isSell) {
             const shares = parseInt(amountInput.value) || 0;
-            const payout = (shares * price / 100).toFixed(2);
+            const proceeds = shares * price / 100;
+
             if (sharesDisplay) sharesDisplay.textContent = shares + ' shares';
             if (priceDisplay) priceDisplay.textContent = price + 'c';
-            if (payoutDisplay) payoutDisplay.textContent = '$' + payout;
+            if (payoutDisplay) payoutDisplay.textContent = '$' + proceeds.toFixed(2);
             if (betButton) betButton.textContent = 'Sell ' + shares + ' ' + contractLabel;
         } else {
             const amount = parseFloat(amountInput.value) || 0;
-            const shares = Math.floor(amount * 100 / price);
-            const payout = shares; // $1 per share
+            const fee = amount * FEE_PERCENTAGE;
+            const netAmount = amount - fee; // Amount available for buying shares after fee
+            const shares = Math.floor(netAmount * 100 / price);
+            const payout = shares; // $1 per share if win
+
             if (sharesDisplay) sharesDisplay.textContent = shares + ' shares';
             if (priceDisplay) priceDisplay.textContent = price + 'c';
             if (payoutDisplay) payoutDisplay.textContent = '$' + payout.toFixed(2);
