@@ -32,4 +32,5 @@ urlpatterns = [
     path('api/markets/<int:pk>/trades/', views.api_recent_trades, name='api_recent_trades'),
     path('api/markets/<int:pk>/position/', views.api_user_position, name='api_user_position'),
     path('api/markets/<int:pk>/price-history/', views.api_price_history, name='api_price_history'),
+    path('api/markets/<int:pk>/order-preview/', views.api_order_preview, name='api_order_preview'),
 ]

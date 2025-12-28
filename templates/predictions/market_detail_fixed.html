@@ -174,6 +174,77 @@
 </div>
 {% endif %}
 
+<!-- Order Confirmation Modal -->
+<div id="order-confirm-modal" class="modal-overlay d-none">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 id="modal-title">Review Order</h3>
+            <button type="button" class="modal-close" onclick="closeOrderModal()">&times;</button>
+        </div>
+
+        <div class="modal-body">
+            <!-- Order Summary -->
+            <div class="order-preview">
+                <div class="preview-row action-row">
+                    <span class="preview-label">Action</span>
+                    <span id="preview-action" class="preview-value">Buy YES</span>
+                </div>
+
+                <div class="preview-divider"></div>
+
+                <div class="preview-row">
+                    <span class="preview-label">Shares</span>
+                    <span id="preview-shares" class="preview-value">--</span>
+                </div>
+
+                <div class="preview-row">
+                    <span class="preview-label">Average Price</span>
+                    <span id="preview-avg-price" class="preview-value">--</span>
+                </div>
+
+                <div class="preview-row highlight">
+                    <span class="preview-label" id="preview-cost-label">Estimated Cost</span>
+                    <span id="preview-total-cost" class="preview-value">--</span>
+                </div>
+
+                <div class="preview-divider"></div>
+
+                <div class="preview-row potential">
+                    <span class="preview-label">Payout if Yes</span>
+                    <span id="preview-payout" class="preview-value text-success">--</span>
+                </div>
+
+                <div class="preview-row">
+                    <span class="preview-label">Potential Profit</span>
+                    <span id="preview-profit" class="preview-value text-success">--</span>
+                </div>
+
+                <div class="preview-row">
+                    <span class="preview-label">Odds</span>
+                    <span id="preview-probability" class="preview-value">--</span>
+                </div>
+            </div>
+
+            <!-- User Balance -->
+            <div class="balance-info">
+                <span>Your Balance: <strong id="preview-balance">$0.00</strong></span>
+            </div>
+
+            <!-- Warning Messages -->
+            <div id="preview-warning" class="preview-warning d-none"></div>
+        </div>
+
+        <div class="modal-footer">
+            <button type="button" class="btn btn-outline modal-back-btn" onclick="closeOrderModal()">
+                <span style="margin-right: 8px;">&larr;</span> Back
+            </button>
+            <button type="button" class="btn btn-primary" id="confirm-order-btn" onclick="confirmOrder()">
+                Submit
+            </button>
+        </div>
+    </div>
+</div>
+
 <!-- Orderbook Section -->
 <div class="orderbook-section">
     <div class="section-title">Orderbook</div>
@@ -326,13 +397,363 @@
         if (limitPrice) limitPrice.addEventListener('input', updateLimitOrderSummary);
         if (limitQty) limitQty.addEventListener('input', updateLimitOrderSummary);
         updateLimitOrderSummary();
+
+        // Initialize order confirmation modal
+        interceptOrderForms();
     });
+
+    // ====== ORDER CONFIRMATION MODAL ======
+    var pendingOrderData = null;
+    var pendingFormElement = null;
+    var orderConfirmMarketId = {{ market.pk }};
+
+    function interceptOrderForms() {
+        // Quick Bet Form
+        var quickBetForm = document.getElementById('quick-bet-form');
+        if (quickBetForm) {
+            quickBetForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                showOrderConfirmation(this, 'quick');
+            });
+        }
+
+        // Limit Order Form
+        var limitOrderPanel = document.getElementById('limit-order-panel');
+        if (limitOrderPanel) {
+            var limitOrderForm = limitOrderPanel.querySelector('form');
+            if (limitOrderForm) {
+                limitOrderForm.addEventListener('submit', function(e) {
+                    e.preventDefault();
+                    showOrderConfirmation(this, 'limit');
+                });
+            }
+        }
+    }
+
+    function showOrderConfirmation(formElement, orderSource) {
+        pendingFormElement = formElement;
+
+        // Gather order data from form
+        var formData = new FormData(formElement);
+
+        var orderData = {
+            source: orderSource,
+            market_id: orderConfirmMarketId
+        };
+
+        if (orderSource === 'quick') {
+            orderData.action = formData.get('action') || 'buy';
+            orderData.contract_type = formData.get('contract_type') || 'yes';
+            orderData.order_type = 'market';
+            orderData.amount = parseFloat(formData.get('amount')) || 0;
+        } else {
+            var orderType = formData.get('order_type');
+            orderData.action = orderType === 'BUY' ? 'buy' : 'sell';
+            orderData.contract_type = (formData.get('outcome') || 'YES').toLowerCase();
+            orderData.order_type = 'limit';
+            orderData.price = parseInt(formData.get('price')) || 50;
+            orderData.quantity = parseInt(formData.get('quantity')) || 1;
+        }
+
+        pendingOrderData = orderData;
+
+        // Fetch order preview from API
+        fetchOrderPreview(orderData);
+    }
+
+    function fetchOrderPreview(orderData) {
+        var url = '/api/markets/' + orderData.market_id + '/order-preview/';
+
+        // Get CSRF token
+        var csrfToken = getCsrfToken();
+
+        fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken
+            },
+            body: JSON.stringify(orderData)
+        })
+        .then(function(response) { return response.json(); })
+        .then(function(data) {
+            if (data.error) {
+                // Show error in modal
+                showPreviewError(data.error);
+            } else {
+                displayOrderPreview(data, orderData);
+            }
+        })
+        .catch(function(error) {
+            console.error('Error fetching preview:', error);
+            // Fallback to client-side calculation
+            displayOrderPreviewClientSide(orderData);
+        });
+    }
+
+    function displayOrderPreview(preview, orderData) {
+        var modal = document.getElementById('order-confirm-modal');
+        var actionText = orderData.action.toUpperCase() + ' ' + orderData.contract_type.toUpperCase();
+        var isBuy = orderData.action === 'buy';
+
+        // Update modal content
+        var previewAction = document.getElementById('preview-action');
+        previewAction.textContent = actionText;
+        previewAction.className = 'preview-value ' + (isBuy ? 'text-success' : 'text-danger');
+
+        document.getElementById('preview-shares').textContent = preview.shares + ' shares';
+        document.getElementById('preview-avg-price').textContent = preview.avg_price + 'c';
+
+        // Update cost/proceeds label and value
+        var costLabel = document.getElementById('preview-cost-label');
+        var costValue = document.getElementById('preview-total-cost');
+        if (isBuy) {
+            costLabel.textContent = 'Estimated Cost';
+            costValue.textContent = '$' + preview.total_cost.toFixed(2);
+        } else {
+            costLabel.textContent = 'You Receive';
+            costValue.textContent = '$' + preview.total_proceeds.toFixed(2);
+        }
+
+        // Payout label based on contract type
+        var payoutLabel = orderData.contract_type === 'yes' ? 'Payout if Yes' : 'Payout if No';
+        document.querySelector('.preview-row.potential .preview-label').textContent = payoutLabel;
+        document.getElementById('preview-payout').textContent = '$' + preview.potential_payout.toFixed(2);
+
+        // Calculate profit
+        var cost = isBuy ? preview.total_cost : 0;
+        var profit = preview.potential_payout - cost;
+        var profitEl = document.getElementById('preview-profit');
+        profitEl.textContent = (profit >= 0 ? '+' : '') + '$' + profit.toFixed(2);
+        profitEl.className = 'preview-value ' + (profit >= 0 ? 'text-success' : 'text-danger');
+
+        document.getElementById('preview-probability').textContent = preview.implied_probability + '% chance';
+        document.getElementById('preview-balance').textContent = '$' + preview.user_balance.toFixed(2);
+
+        // Check for warnings
+        var warningEl = document.getElementById('preview-warning');
+        var confirmBtn = document.getElementById('confirm-order-btn');
+        if (preview.warning) {
+            warningEl.textContent = preview.warning;
+            warningEl.classList.remove('d-none');
+            confirmBtn.disabled = true;
+            confirmBtn.style.opacity = '0.5';
+        } else {
+            warningEl.classList.add('d-none');
+            confirmBtn.disabled = false;
+            confirmBtn.style.opacity = '1';
+        }
+
+        // Show modal
+        modal.classList.remove('d-none');
+    }
+
+    function displayOrderPreviewClientSide(orderData) {
+        // Fallback calculation when API is unavailable
+        var price = 50; // Default price
+        var shares, totalCost;
+
+        if (orderData.order_type === 'limit') {
+            price = orderData.price;
+            shares = orderData.quantity;
+            totalCost = shares * price / 100;
+        } else {
+            // Market order - use a default estimate
+            shares = Math.floor(orderData.amount * 100 / price);
+            totalCost = orderData.amount;
+        }
+
+        var preview = {
+            shares: shares,
+            avg_price: price,
+            total_cost: totalCost,
+            total_proceeds: totalCost,
+            potential_payout: shares,
+            implied_probability: price,
+            user_balance: 0,
+            warning: null
+        };
+
+        displayOrderPreview(preview, orderData);
+    }
+
+    function closeOrderModal() {
+        var modal = document.getElementById('order-confirm-modal');
+        modal.classList.add('d-none');
+        pendingOrderData = null;
+        pendingFormElement = null;
+    }
+
+    function confirmOrder() {
+        if (pendingFormElement) {
+            // Disable button to prevent double-submit
+            var confirmBtn = document.getElementById('confirm-order-btn');
+            confirmBtn.disabled = true;
+            confirmBtn.textContent = 'Submitting...';
+
+            // Submit the original form
+            pendingFormElement.submit();
+        }
+    }
+
+    function getCsrfToken() {
+        var csrfInput = document.querySelector('input[name="csrfmiddlewaretoken"]');
+        return csrfInput ? csrfInput.value : '';
+    }
+
+    function showPreviewError(message) {
+        var modal = document.getElementById('order-confirm-modal');
+        var warningEl = document.getElementById('preview-warning');
+
+        warningEl.textContent = message;
+        warningEl.classList.remove('d-none');
+
+        document.getElementById('confirm-order-btn').disabled = true;
+        document.getElementById('confirm-order-btn').style.opacity = '0.5';
+        modal.classList.remove('d-none');
+    }
 </script>
 
 {% endblock %}
 
 {% block extra_css %}
 <style>
+    /* Order Confirmation Modal */
+    .modal-overlay {
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        bottom: 0 !important;
+        background: rgba(0, 0, 0, 0.75) !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        z-index: 9999 !important;
+        padding: 16px;
+        backdrop-filter: blur(4px);
+    }
+
+    .modal-overlay.d-none {
+        display: none !important;
+    }
+
+    .modal-content {
+        background: var(--bg-card);
+        border-radius: 16px;
+        border: 1px solid var(--border-color);
+        max-width: 400px;
+        width: 100%;
+        max-height: 90vh;
+        overflow-y: auto;
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    }
+
+    .modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 16px 20px;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .modal-header h3 {
+        margin: 0;
+        font-size: 1.1rem;
+        font-weight: 600;
+    }
+
+    .modal-close {
+        background: none;
+        border: none;
+        font-size: 1.5rem;
+        color: var(--text-tertiary);
+        cursor: pointer;
+        padding: 0;
+        line-height: 1;
+    }
+
+    .modal-body {
+        padding: 20px;
+    }
+
+    .modal-footer {
+        display: flex;
+        gap: 12px;
+        padding: 16px 20px;
+        border-top: 1px solid var(--border-color);
+    }
+
+    .modal-footer .btn {
+        flex: 1;
+        padding: 14px 16px;
+    }
+
+    .modal-back-btn {
+        flex: 0 0 auto !important;
+    }
+
+    .order-preview {
+        background: var(--bg-main);
+        border-radius: 12px;
+        padding: 16px;
+        margin-bottom: 16px;
+    }
+
+    .preview-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px 0;
+    }
+
+    .preview-row.highlight {
+        background: rgba(59, 130, 246, 0.15);
+        margin: 8px -16px;
+        padding: 12px 16px;
+        border-radius: 8px;
+    }
+
+    .preview-label {
+        color: var(--text-secondary);
+        font-size: 0.9rem;
+    }
+
+    .preview-value {
+        font-weight: 600;
+        font-size: 0.95rem;
+    }
+
+    .preview-divider {
+        height: 1px;
+        background: var(--border-color);
+        margin: 4px 0;
+    }
+
+    .balance-info {
+        text-align: center;
+        padding: 12px;
+        background: var(--bg-main);
+        border-radius: 8px;
+        font-size: 0.9rem;
+        color: var(--text-secondary);
+    }
+
+    .balance-info strong {
+        color: var(--pm-green);
+    }
+
+    .preview-warning {
+        background: rgba(239, 68, 68, 0.1);
+        border: 1px solid var(--pm-red);
+        border-radius: 8px;
+        padding: 12px;
+        margin-top: 16px;
+        color: var(--pm-red);
+        font-size: 0.85rem;
+        text-align: center;
+    }
+
     /* Clean up flashing animations */
     .price-up {
         color: var(--pm-green);

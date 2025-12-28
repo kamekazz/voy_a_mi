@@ -11,7 +11,13 @@ from decimal import Decimal, InvalidOperation
 from .models import User, Category, Event, Market, Order, Trade, Position, Transaction
 from .forms import UserRegistrationForm
 from .forms import OrderForm, QuickOrderForm
-from .engine.matching import get_orderbook
+from .engine.matching import get_orderbook, MatchingEngine
+from .exceptions import (
+    InsufficientFundsError,
+    InsufficientPositionError,
+    InvalidPriceError,
+    MarketNotActiveError,
+)
 
 
 def index(request):
@@ -160,95 +166,86 @@ def order_book_json(request, market_id):
 @login_required
 @require_POST
 def place_order(request, pk):
-    """Place a new order on a market (Order Book only)."""
+    """Place a new order on a market using the matching engine."""
     market = get_object_or_404(Market, pk=pk)
 
-    order_type = request.POST.get('order_type')
+    order_type_input = request.POST.get('order_type')  # 'BUY' or 'SELL'
     outcome_input = request.POST.get('outcome')
     if not outcome_input:
-         return HttpResponse("Missing outcome")
+        return HttpResponse("Missing outcome")
     contract_type = outcome_input.lower()
-    
-    price = request.POST.get('price')
-    quantity = int(request.POST.get('quantity'))
 
-    # Handle Market Orders (empty price)
-    if not price:
-        price_val = None
+    price_input = request.POST.get('price')
+
+    try:
+        quantity = int(request.POST.get('quantity'))
+    except (ValueError, TypeError):
+        messages.error(request, "Invalid quantity.")
+        return redirect('predictions:market_detail', market_id=market.id)
+
+    # Handle price - convert to cents for matching engine
+    if not price_input:
+        price_cents = None  # Market order
+        actual_order_type = 'market'
     else:
         try:
-            price_cents = int(price)
+            price_cents = int(price_input)
             # Validate price range (1-99 cents)
             if price_cents < 1 or price_cents > 99:
                 messages.error(request, "Price must be between 1 and 99 cents")
                 return redirect('predictions:market_detail', market_id=market.id)
-            # Convert cents to dollars for storage
-            price_val = Decimal(price_cents) / 100
+            actual_order_type = 'limit'
         except (ValueError, TypeError):
-             return HttpResponse("Invalid price")
+            messages.error(request, "Invalid price.")
+            return redirect('predictions:market_detail', market_id=market.id)
 
     user = request.user
-    position, _ = Position.objects.get_or_create(user=request.user, market=market)
+    side = order_type_input.lower()  # 'buy' or 'sell'
 
-    if order_type == 'BUY':
-        # Calculate reservation amount
-        # If Market Order, reserve max possible price ($1.00) to be safe
-        reservation_price = price_val if price_val is not None else Decimal('1.00')
-        total_cost = reservation_price * quantity
+    try:
+        engine = MatchingEngine(market)
+        order, trades = engine.place_order(
+            user=user,
+            side=side,
+            contract_type=contract_type,
+            price=price_cents,  # In cents, or None for market order
+            quantity=quantity,
+            order_type=actual_order_type
+        )
 
-        if user.balance >= total_cost:
-            user.balance -= total_cost
-            user.reserved_balance += total_cost
-            user.save()
+        if trades:
+            if side == 'buy':
+                total = sum(t.quantity * t.price / 100 for t in trades)
+                messages.success(request, f"Bought {order.filled_quantity} {contract_type.upper()} shares for ${total:.2f}")
+            else:
+                total = sum(t.quantity * t.price / 100 for t in trades)
+                messages.success(request, f"Sold {order.filled_quantity} {contract_type.upper()} shares for ${total:.2f}")
+        elif order.filled_quantity > 0:
+            messages.success(request, f"Partially filled: {order.filled_quantity}/{quantity} shares.")
         else:
-            messages.error(request, "Insufficient funds")
-            return redirect('predictions:market_detail', market_id=market.id)
-            
-    elif order_type == 'SELL':
-        if contract_type == 'yes':
-            if position.yes_quantity >= quantity:
-                position.yes_quantity -= quantity
-                position.reserved_yes_quantity += quantity
-                position.save()
-            else:
-                messages.error(request, "Insufficient YES shares")
-                return redirect('predictions:market_detail', market_id=market.id)
-        else: # NO
-            if position.no_quantity >= quantity:
-                position.no_quantity -= quantity
-                position.reserved_no_quantity += quantity
-                position.save()
-            else:
-                messages.error(request, "Insufficient NO shares")
-                return redirect('predictions:market_detail', market_id=market.id)
+            messages.success(request, f"Order placed for {quantity} {contract_type.upper()} @ {price_cents}c. Waiting for match.")
 
-    # Determine actual order type (LIMIT/MARKET) based on price presence
-    actual_order_type = 'market' if price_val is None else 'limit'
-    side = order_type.lower() # 'buy' or 'sell'
+    except InsufficientFundsError as e:
+        messages.error(request, f"Insufficient funds. You have ${e.available:.2f} available.")
+    except InsufficientPositionError as e:
+        messages.error(request, f"Insufficient {e.contract_type.upper()} shares. You have {e.available}.")
+    except InvalidPriceError:
+        messages.error(request, "Price must be between 1 and 99 cents.")
+    except MarketNotActiveError:
+        messages.error(request, "Market is not active for trading.")
+    except Exception as e:
+        messages.error(request, f"Error placing order: {e}")
 
-    Order.objects.create(
-        user=request.user,
-        market=market,
-        side=side,
-        contract_type=contract_type,
-        order_type=actual_order_type,
-        price=price_val,
-        quantity=quantity
-    )
-    
-
-    
-    messages.success(request, "Order placed successfully.")
     return redirect('predictions:market_detail', market_id=market.id)
 
 @login_required
 @require_POST
 def place_quick_bet(request, pk):
-    """Place a quick bet - creates order for engine to process.
+    """Place a quick bet using the matching engine.
 
     Buy: User specifies dollar amount and contract type (YES/NO).
     Sell: User specifies number of shares to sell.
-    Order is placed in the order book for the engine to match.
+    Order is placed and immediately matched by the engine.
     """
     market = get_object_or_404(Market, pk=pk)
 
@@ -268,7 +265,7 @@ def place_quick_bet(request, pk):
 
     try:
         user = request.user
-        position, _ = Position.objects.get_or_create(user=request.user, market=market)
+        engine = MatchingEngine(market)
 
         if action == 'sell':
             # SELL: User enters number of shares to sell
@@ -282,33 +279,23 @@ def place_quick_bet(request, pk):
                 messages.error(request, "Quantity must be at least 1 share.")
                 return redirect('predictions:market_detail', market_id=pk)
 
-            # Reserve shares (move from available to reserved)
-            if contract_type == 'yes':
-                if position.yes_quantity < quantity:
-                    messages.error(request, f"Insufficient YES shares. You have {position.yes_quantity}.")
-                    return redirect('predictions:market_detail', market_id=pk)
-                position.yes_quantity -= quantity
-                position.reserved_yes_quantity += quantity
-            else:
-                if position.no_quantity < quantity:
-                    messages.error(request, f"Insufficient NO shares. You have {position.no_quantity}.")
-                    return redirect('predictions:market_detail', market_id=pk)
-                position.no_quantity -= quantity
-                position.reserved_no_quantity += quantity
-            position.save()
-
-            # Create market sell order - engine will process
-            Order.objects.create(
-                user=request.user,
-                market=market,
+            # Use matching engine to place and match the order
+            order, trades = engine.place_order(
+                user=user,
                 side='sell',
                 contract_type=contract_type,
-                order_type='market',
-                price=None,  # Market order - engine determines price
+                price=None,  # Market order
                 quantity=quantity,
-                status=Order.Status.OPEN
+                order_type='market'
             )
-            messages.success(request, f"Sell order placed for {quantity} {contract_type.upper()} shares. Waiting for match.")
+
+            if trades:
+                total_proceeds = sum(t.quantity * t.price / 100 for t in trades)
+                messages.success(request, f"Sold {order.filled_quantity} {contract_type.upper()} shares for ${total_proceeds:.2f}")
+            elif order.filled_quantity > 0:
+                messages.success(request, f"Partially filled: {order.filled_quantity}/{quantity} shares sold.")
+            else:
+                messages.info(request, f"Sell order placed for {quantity} {contract_type.upper()} shares. Waiting for match.")
 
         else:
             # BUY: User enters dollar amount
@@ -332,29 +319,30 @@ def place_quick_bet(request, pk):
                 messages.error(request, f"Amount too small to buy any shares.")
                 return redirect('predictions:market_detail', market_id=pk)
 
-            # Reserve funds (for market order, reserve at $1 max per share to be safe)
-            reserve_amount = Decimal(quantity)  # $1 per share max
-            if user.balance < reserve_amount:
-                messages.error(request, f"Insufficient balance. You have ${user.balance:.2f}.")
-                return redirect('predictions:market_detail', market_id=pk)
-
-            user.balance -= reserve_amount
-            user.reserved_balance += reserve_amount
-            user.save()
-
-            # Create market buy order - engine will process
-            Order.objects.create(
-                user=request.user,
-                market=market,
+            # Use matching engine to place and match the order
+            order, trades = engine.place_order(
+                user=user,
                 side='buy',
                 contract_type=contract_type,
-                order_type='market',
                 price=None,  # Market order - engine determines price
                 quantity=quantity,
-                status=Order.Status.OPEN
+                order_type='market'
             )
-            messages.success(request, f"Buy order placed for {quantity} {contract_type.upper()} shares. Waiting for match.")
 
+            if trades:
+                total_cost = sum(t.quantity * t.price / 100 for t in trades)
+                messages.success(request, f"Bought {order.filled_quantity} {contract_type.upper()} shares for ${total_cost:.2f}")
+            elif order.filled_quantity > 0:
+                messages.success(request, f"Partially filled: {order.filled_quantity}/{quantity} shares bought.")
+            else:
+                messages.info(request, f"Buy order placed for {quantity} {contract_type.upper()} shares. Waiting for match.")
+
+    except InsufficientFundsError as e:
+        messages.error(request, f"Insufficient balance. You have ${e.available:.2f} available.")
+    except InsufficientPositionError as e:
+        messages.error(request, f"Insufficient {e.contract_type.upper()} shares. You have {e.available}.")
+    except MarketNotActiveError:
+        messages.error(request, "Market is not active for trading.")
     except Exception as e:
         messages.error(request, f"Error placing order: {e}")
 
@@ -766,6 +754,231 @@ def api_price_history(request, pk):
         'current_yes': market.last_yes_price,
         'current_no': market.last_no_price,
     })
+
+
+@login_required
+def api_order_preview(request, pk):
+    """
+    Calculate order preview for confirmation modal.
+
+    POST parameters:
+    - action: 'buy' or 'sell'
+    - contract_type: 'yes' or 'no'
+    - order_type: 'market' or 'limit'
+    - amount: dollar amount (for buy) or quantity (for sell) in quick bet
+    - price: price in cents (for limit orders only)
+    - quantity: number of shares (for limit orders only)
+
+    Returns calculated preview data for the confirmation popup.
+    """
+    import json
+
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+
+    market = get_object_or_404(Market, pk=pk)
+
+    # Check if market is active
+    if not market.is_trading_active:
+        return JsonResponse({'error': 'Market is not active for trading'}, status=400)
+
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    action = data.get('action', 'buy').lower()  # 'buy' or 'sell'
+    contract_type = data.get('contract_type', 'yes').lower()  # 'yes' or 'no'
+    order_type = data.get('order_type', 'market').lower()  # 'market' or 'limit'
+
+    user = request.user
+    user_balance = float(user.available_balance)
+
+    # Get user position for sell validation
+    position = Position.objects.filter(user=user, market=market).first()
+    user_position = {
+        'yes': position.yes_quantity - position.reserved_yes_quantity if position else 0,
+        'no': position.no_quantity - position.reserved_no_quantity if position else 0
+    }
+
+    result = {
+        'user_balance': user_balance,
+        'user_position': user_position,
+        'current_yes_price': market.last_yes_price,
+        'current_no_price': market.last_no_price,
+        'warning': None,
+    }
+
+    if order_type == 'limit':
+        # Limit order: straightforward calculation
+        price = int(data.get('price', 50))
+        quantity = int(data.get('quantity', 1))
+
+        # Validate price
+        if price < 1 or price > 99:
+            return JsonResponse({'error': 'Price must be between 1 and 99 cents'}, status=400)
+
+        total = quantity * price / 100  # Convert cents to dollars
+
+        result.update({
+            'shares': quantity,
+            'avg_price': price,
+            'total_cost': total if action == 'buy' else 0,
+            'total_proceeds': total if action == 'sell' else 0,
+            'potential_payout': quantity,  # $1 per share if wins
+            'implied_probability': price,
+        })
+
+        # Validation
+        if action == 'buy' and total > user_balance:
+            result['warning'] = f'Insufficient funds. You have ${user_balance:.2f}'
+        elif action == 'sell':
+            available = user_position.get(contract_type, 0)
+            if quantity > available:
+                result['warning'] = f'Insufficient {contract_type.upper()} shares. You have {available}'
+
+    else:
+        # Market order: use current market price or walk the orderbook
+        amount = float(data.get('amount', 0))
+
+        # Get current orderbook
+        orderbook = get_orderbook(market, depth=50)
+
+        if action == 'buy':
+            # Get the price we'll buy at (ask side for buying)
+            if contract_type == 'yes':
+                asks = orderbook.get('yes_asks', [])
+                current_price = market.last_yes_price or 50
+            else:
+                asks = orderbook.get('no_asks', [])
+                current_price = market.last_no_price or 50
+
+            if not asks:
+                # No asks available, use last price
+                price = current_price
+                shares = int(amount * 100 / price) if price > 0 else 0
+                avg_price = price
+            else:
+                # Walk through asks to calculate average fill price
+                shares, total_spent, avg_price = _calculate_market_buy_fill(asks, amount)
+
+            total_cost = amount
+
+            result.update({
+                'shares': shares,
+                'avg_price': avg_price,
+                'total_cost': total_cost,
+                'total_proceeds': 0,
+                'potential_payout': shares,  # $1 per share if wins
+                'implied_probability': avg_price,
+            })
+
+            if amount > user_balance:
+                result['warning'] = f'Insufficient funds. You have ${user_balance:.2f}'
+            elif shares == 0:
+                result['warning'] = 'Amount too small to purchase any shares'
+
+        else:  # sell
+            quantity = int(amount)  # For sell, amount is quantity
+
+            # Get bid side of orderbook
+            if contract_type == 'yes':
+                bids = orderbook.get('yes_bids', [])
+                current_price = market.last_yes_price or 50
+            else:
+                bids = orderbook.get('no_bids', [])
+                current_price = market.last_no_price or 50
+
+            if not bids:
+                price = current_price
+                proceeds = quantity * price / 100
+                avg_price = price
+            else:
+                shares_sold, proceeds, avg_price = _calculate_market_sell_fill(bids, quantity)
+                quantity = shares_sold
+
+            result.update({
+                'shares': quantity,
+                'avg_price': avg_price,
+                'total_cost': 0,
+                'total_proceeds': proceeds,
+                'potential_payout': proceeds,
+                'implied_probability': avg_price,
+            })
+
+            available = user_position.get(contract_type, 0)
+            if quantity > available:
+                result['warning'] = f'Insufficient {contract_type.upper()} shares. You have {available}'
+
+    return JsonResponse(result)
+
+
+def _calculate_market_buy_fill(asks, amount):
+    """
+    Walk through ask levels to calculate fill for market buy.
+
+    Args:
+        asks: List of ask levels [{'price': int, 'quantity': int}, ...]
+        amount: Dollar amount to spend
+
+    Returns: (shares, total_spent_dollars, avg_price_cents)
+    """
+    remaining_budget = amount * 100  # Convert to cents
+    shares = 0
+    total_cost_cents = 0
+
+    for level in asks:
+        price = level['price']
+        available = level['quantity']
+
+        # How many can we buy at this level?
+        max_shares_at_level = int(remaining_budget / price)
+        shares_to_buy = min(max_shares_at_level, available)
+
+        if shares_to_buy > 0:
+            cost = shares_to_buy * price
+            shares += shares_to_buy
+            total_cost_cents += cost
+            remaining_budget -= cost
+
+        if remaining_budget < 1:  # Less than 1 cent left
+            break
+
+    avg_price = int(total_cost_cents / shares) if shares > 0 else 50
+    return shares, total_cost_cents / 100, avg_price
+
+
+def _calculate_market_sell_fill(bids, quantity):
+    """
+    Walk through bid levels to calculate fill for market sell.
+
+    Args:
+        bids: List of bid levels [{'price': int, 'quantity': int}, ...]
+        quantity: Number of shares to sell
+
+    Returns: (shares_sold, proceeds_dollars, avg_price_cents)
+    """
+    remaining_quantity = quantity
+    shares_sold = 0
+    total_proceeds_cents = 0
+
+    for level in bids:
+        price = level['price']
+        available = level['quantity']
+
+        shares_to_sell = min(remaining_quantity, available)
+
+        if shares_to_sell > 0:
+            proceeds = shares_to_sell * price
+            shares_sold += shares_to_sell
+            total_proceeds_cents += proceeds
+            remaining_quantity -= shares_to_sell
+
+        if remaining_quantity <= 0:
+            break
+
+    avg_price = int(total_proceeds_cents / shares_sold) if shares_sold > 0 else 50
+    return shares_sold, total_proceeds_cents / 100, avg_price
 
 
 def register(request):

@@ -890,3 +890,170 @@ a {
     height: 100%;
     padding: 0 12px;
 }
+
+/* ====== ORDER CONFIRMATION MODAL ====== */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.75);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 16px;
+    backdrop-filter: blur(4px);
+}
+
+.modal-content {
+    background: var(--bg-card);
+    border-radius: 16px;
+    border: 1px solid var(--border-color);
+    max-width: 400px;
+    width: 100%;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.modal-header h3 {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+    transition: color 0.2s;
+}
+
+.modal-close:hover {
+    color: var(--text-primary);
+}
+
+.modal-body {
+    padding: 20px;
+}
+
+.modal-footer {
+    display: flex;
+    gap: 12px;
+    padding: 16px 20px;
+    border-top: 1px solid var(--border-color);
+}
+
+.modal-footer .btn {
+    flex: 1;
+    padding: 14px 16px;
+}
+
+.modal-back-btn {
+    flex: 0 0 auto !important;
+    padding-left: 12px !important;
+    padding-right: 16px !important;
+}
+
+/* Order Preview Styling */
+.order-preview {
+    background: var(--bg-main);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 16px;
+}
+
+.preview-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+}
+
+.preview-row.action-row {
+    padding-bottom: 12px;
+}
+
+.preview-row.highlight {
+    background: rgba(59, 130, 246, 0.1);
+    margin: 8px -16px;
+    padding: 12px 16px;
+    border-radius: 8px;
+}
+
+.preview-row.potential {
+    padding-top: 12px;
+}
+
+.preview-label {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.preview-value {
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: var(--text-primary);
+}
+
+.preview-divider {
+    height: 1px;
+    background: var(--border-color);
+    margin: 4px 0;
+}
+
+.balance-info {
+    text-align: center;
+    padding: 12px;
+    background: var(--bg-main);
+    border-radius: 8px;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+.balance-info strong {
+    color: var(--pm-green);
+}
+
+.preview-warning {
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid var(--pm-red);
+    border-radius: 8px;
+    padding: 12px;
+    margin-top: 16px;
+    color: var(--pm-red);
+    font-size: 0.85rem;
+    text-align: center;
+}
+
+/* Action-specific colors in preview */
+.preview-value.buy-yes {
+    color: var(--pm-green);
+}
+
+.preview-value.buy-no {
+    color: var(--pm-red);
+}
+
+.preview-value.sell-yes {
+    color: var(--pm-red);
+}
+
+.preview-value.sell-no {
+    color: var(--pm-green);
+}
