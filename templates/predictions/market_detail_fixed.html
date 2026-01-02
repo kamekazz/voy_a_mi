@@ -28,13 +28,11 @@
     <div class="detail-price-row">
         <div class="price-block">
             <span class="price-label">YES</span>
-            <div class="price-value text-yes" id="yes-price">{{ ob_prices.yes_price }}c</div>
-            <div style="font-size: 0.8rem; color: var(--text-tertiary);"><span id="yes-implied">{{ ob_prices.yes_price }}</span>%</div>
+            <div class="price-value text-yes" id="yes-price">{{ ob_prices.yes_price }}¢</div>
         </div>
         <div class="price-block">
             <span class="price-label">NO</span>
-            <div class="price-value text-no" id="no-price">{{ ob_prices.no_price }}c</div>
-            <div style="font-size: 0.8rem; color: var(--text-tertiary);"><span id="no-implied">{{ ob_prices.no_price }}</span>%</div>
+            <div class="price-value text-no" id="no-price">{{ ob_prices.no_price }}¢</div>
         </div>
     </div>
 
@@ -1109,15 +1107,12 @@
     function updatePrices(newYesPrice, newNoPrice, animate) {
         const yesPrice = document.getElementById('yes-price');
         const noPrice = document.getElementById('no-price');
-        const yesImplied = document.getElementById('yes-implied');
-        const noImplied = document.getElementById('no-implied');
 
         // Update YES price
         if (yesPrice && newYesPrice !== undefined) {
             const oldYes = marketPrices.lastYes || marketPrices.yesPrice;
             if (newYesPrice !== oldYes) {
-                yesPrice.textContent = newYesPrice + 'c';
-                if (yesImplied) yesImplied.textContent = newYesPrice;
+                yesPrice.textContent = newYesPrice + '¢';
                 marketPrices.lastYes = newYesPrice;
                 if (animate) {
                     yesPrice.classList.add(newYesPrice > oldYes ? 'price-up' : 'price-down');
@@ -1130,8 +1125,7 @@
         if (noPrice && newNoPrice !== undefined) {
             const oldNo = marketPrices.lastNo || marketPrices.noPrice;
             if (newNoPrice !== oldNo) {
-                noPrice.textContent = newNoPrice + 'c';
-                if (noImplied) noImplied.textContent = newNoPrice;
+                noPrice.textContent = newNoPrice + '¢';
                 marketPrices.lastNo = newNoPrice;
                 if (animate) {
                     noPrice.classList.add(newNoPrice > oldNo ? 'price-up' : 'price-down');
