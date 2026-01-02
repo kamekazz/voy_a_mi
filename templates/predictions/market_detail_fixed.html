@@ -288,7 +288,10 @@
 
 <!-- Trades Section -->
 <div class="orderbook-section mb-4">
-    <div class="section-title">Recent Trades</div>
+    <div class="section-title" style="display: flex; justify-content: space-between; align-items: center;">
+        <span>Recent Trades</span>
+        <a href="{% url 'predictions:trade_history' %}" class="trades-view-all-link">View All</a>
+    </div>
     <div
         style="background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border-color); overflow-x: auto;">
         <table class="orderbook-table">
@@ -304,6 +307,13 @@
                 <!-- JS Injected -->
             </tbody>
         </table>
+        <!-- Expand/Collapse Controls -->
+        <div id="trades-controls" class="trades-controls" style="display: none;">
+            <button id="trades-expand-btn" class="trades-expand-btn" onclick="toggleTradesExpand()">
+                <span id="trades-expand-text">Show more</span>
+                <span id="trades-expand-icon" class="trades-expand-icon">&#9660;</span>
+            </button>
+        </div>
     </div>
 </div>
 
@@ -840,6 +850,50 @@
         width: 100% !important;
         height: 100% !important;
     }
+
+    /* Trades Expand/Collapse */
+    .trades-view-all-link {
+        font-size: 0.8rem;
+        color: var(--pm-blue, #3B82F6);
+        text-decoration: none;
+        font-weight: 500;
+    }
+
+    .trades-view-all-link:hover {
+        text-decoration: underline;
+    }
+
+    .trades-controls {
+        border-top: 1px solid var(--border-color);
+        padding: 8px 12px;
+        text-align: center;
+    }
+
+    .trades-expand-btn {
+        background: transparent;
+        border: none;
+        color: var(--text-secondary);
+        font-size: 0.85rem;
+        cursor: pointer;
+        padding: 4px 12px;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        transition: color 0.2s;
+    }
+
+    .trades-expand-btn:hover {
+        color: var(--text-primary);
+    }
+
+    .trades-expand-icon {
+        font-size: 0.7rem;
+        transition: transform 0.2s;
+    }
+
+    .trades-expand-icon.expanded {
+        transform: rotate(180deg);
+    }
 </style>
 {% endblock %}
 
@@ -854,6 +908,12 @@
 
         // Market ID for WebSocket connection
         const marketId = {{ market.pk }};
+
+        // Trades display configuration
+        const TRADES_COLLAPSED_COUNT = 5;
+        const TRADES_EXPANDED_COUNT = 20;
+        let isTradesExpanded = false;
+        let allTradesData = [];
 
     // Order book price data from Django (will be updated by WebSocket)
     const marketPrices = {
@@ -985,27 +1045,19 @@
         }
     }
 
-    // Add new trade to the trades table
+    // Add new trade to the trades table (WebSocket real-time update)
     function addTradeToTable(trade) {
-        const tbody = document.getElementById('trades-tbody');
-        if (!tbody) return;
+        // Add to allTradesData at the beginning
+        allTradesData.unshift(trade);
 
-        const row = document.createElement('tr');
-        const time = new Date(trade.executed_at);
-        const timeStr = time.toLocaleTimeString('en-US', { hour12: false });
-        // Simplified Logic for Artifact
-        const actionBadgeClass = trade.side === 'buy' ? 'text-green' : 'text-red';
-        const typeColor = trade.contract_type === 'yes' ? 'text-green' : 'text-red';
+        // Keep allTradesData within reasonable bounds (match API limit)
+        if (allTradesData.length > 50) {
+            allTradesData = allTradesData.slice(0, 50);
+        }
 
-        row.innerHTML = `
-            <td>${timeStr}</td>
-            <td style="font-weight:600" class="${actionBadgeClass}">${trade.side.toUpperCase()}</td>
-            <td>${trade.avg_price}c</td>
-            <td class="text-end">${trade.quantity}</td>
-        `;
-
-        tbody.insertBefore(row, tbody.firstChild);
-        if (tbody.children.length > 20) tbody.removeChild(tbody.lastChild);
+        // Re-render with current expand/collapse state
+        renderTradesWithLimit();
+        updateTradesControls();
     }
 
     // Send ping to keep connection alive
@@ -1138,13 +1190,17 @@
             .then(response => response.json())
             .then(data => {
                 if (data.trades) {
-                    renderTrades(data.trades);
+                    // Store all trades for expand/collapse functionality
+                    allTradesData = data.trades;
+                    renderTradesWithLimit();
+                    updateTradesControls();
                 }
             })
             .catch(err => console.error('Error fetching trades:', err));
     }
 
-    function renderTrades(trades) {
+    // Internal render function (renders provided trades array)
+    function renderTradesAll(trades) {
         const tbody = document.getElementById('trades-tbody');
         if (!tbody) return;
 
@@ -1168,6 +1224,57 @@
         });
         tbody.innerHTML = html;
     }
+
+    // Render trades with current expand/collapse state
+    function renderTradesWithLimit() {
+        const limit = isTradesExpanded ? TRADES_EXPANDED_COUNT : TRADES_COLLAPSED_COUNT;
+        const tradesToShow = allTradesData.slice(0, limit);
+        renderTradesAll(tradesToShow);
+    }
+
+    // Legacy alias for backwards compatibility
+    function renderTrades(trades) {
+        allTradesData = trades;
+        renderTradesWithLimit();
+        updateTradesControls();
+    }
+
+    // Toggle trades expand/collapse
+    function toggleTradesExpand() {
+        isTradesExpanded = !isTradesExpanded;
+        renderTradesWithLimit();
+        updateTradesControls();
+    }
+
+    // Update the expand/collapse button state
+    function updateTradesControls() {
+        const expandBtn = document.getElementById('trades-expand-btn');
+        const expandText = document.getElementById('trades-expand-text');
+        const expandIcon = document.getElementById('trades-expand-icon');
+        const controlsDiv = document.getElementById('trades-controls');
+
+        if (!expandBtn || !controlsDiv) return;
+
+        // Hide controls if we have fewer trades than collapsed limit
+        if (allTradesData.length <= TRADES_COLLAPSED_COUNT) {
+            controlsDiv.style.display = 'none';
+            return;
+        }
+
+        controlsDiv.style.display = 'block';
+
+        if (isTradesExpanded) {
+            expandText.textContent = 'Show less';
+            expandIcon.classList.add('expanded');
+        } else {
+            const moreCount = Math.min(allTradesData.length, TRADES_EXPANDED_COUNT) - TRADES_COLLAPSED_COUNT;
+            expandText.textContent = 'Show ' + moreCount + ' more';
+            expandIcon.classList.remove('expanded');
+        }
+    }
+
+    // Make toggleTradesExpand available globally (for onclick handler)
+    window.toggleTradesExpand = toggleTradesExpand;
 
     // Poll every 2 seconds
     setInterval(fetchOrderBook, 2000);
