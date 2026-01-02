@@ -441,6 +441,7 @@ a {
     font-weight: 600;
     color: var(--text-tertiary);
     font-size: 0.9rem;
+    margin-right: 8px;
 }
 
 .order-summary {
