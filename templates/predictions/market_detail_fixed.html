@@ -39,13 +39,10 @@
     </div>
 
     <!-- UI Mode Toggle -->
-    <div class="ui-mode-toggle">
-        <span class="mode-label {% if ui_mode == 'easy' %}active{% endif %}" id="mode-label-easy">Easy</span>
-        <label class="toggle-switch">
-            <input type="checkbox" id="ui-mode-toggle" {% if ui_mode == 'advanced' %}checked{% endif %}>
-            <span class="toggle-slider"></span>
-        </label>
-        <span class="mode-label {% if ui_mode == 'advanced' %}active{% endif %}" id="mode-label-advanced">Pro</span>
+    <div class="view-mode-tabs">
+        <button type="button" class="view-mode-tab {% if ui_mode == 'easy' %}active{% endif %}" id="mode-btn-easy">Simple</button>
+        <span class="view-mode-divider">|</span>
+        <button type="button" class="view-mode-tab {% if ui_mode == 'advanced' %}active{% endif %}" id="mode-btn-pro">Advanced</button>
     </div>
 </div>
 
@@ -334,31 +331,24 @@
     const isAuthenticated = {{ user.is_authenticated|yesno:"true,false" }};
 
     function initUIMode() {
-        const toggle = document.getElementById('ui-mode-toggle');
-        if (!toggle) return;
+        const easyBtn = document.getElementById('mode-btn-easy');
+        const proBtn = document.getElementById('mode-btn-pro');
+        if (!easyBtn || !proBtn) return;
 
         // For anonymous users, check localStorage
         if (!isAuthenticated) {
             const savedMode = localStorage.getItem('voyami_ui_mode');
             if (savedMode) {
                 currentUIMode = savedMode;
-                toggle.checked = (currentUIMode === 'advanced');
                 applyUIMode(currentUIMode);
             }
         }
 
-        toggle.addEventListener('change', function() {
-            const newMode = this.checked ? 'advanced' : 'easy';
-            toggleUIMode(newMode);
-        });
-
-        // Also allow clicking on labels
-        document.getElementById('mode-label-easy').addEventListener('click', function() {
-            toggle.checked = false;
+        // Button click handlers
+        easyBtn.addEventListener('click', function() {
             toggleUIMode('easy');
         });
-        document.getElementById('mode-label-advanced').addEventListener('click', function() {
-            toggle.checked = true;
+        proBtn.addEventListener('click', function() {
             toggleUIMode('advanced');
         });
     }
@@ -394,14 +384,14 @@
 
     function applyUIMode(mode) {
         const advancedElements = document.querySelectorAll('.advanced-only');
-        const easyLabel = document.getElementById('mode-label-easy');
-        const advancedLabel = document.getElementById('mode-label-advanced');
+        const easyBtn = document.getElementById('mode-btn-easy');
+        const proBtn = document.getElementById('mode-btn-pro');
 
         if (mode === 'advanced') {
             // Show all advanced elements
             advancedElements.forEach(function(el) { el.classList.remove('d-none'); });
-            if (easyLabel) easyLabel.classList.remove('active');
-            if (advancedLabel) advancedLabel.classList.add('active');
+            if (easyBtn) easyBtn.classList.remove('active');
+            if (proBtn) proBtn.classList.add('active');
 
             // Initialize chart if not already done (only load in advanced mode)
             if (!priceChart) {
@@ -410,8 +400,8 @@
         } else {
             // Hide advanced elements
             advancedElements.forEach(function(el) { el.classList.add('d-none'); });
-            if (easyLabel) easyLabel.classList.add('active');
-            if (advancedLabel) advancedLabel.classList.remove('active');
+            if (easyBtn) easyBtn.classList.add('active');
+            if (proBtn) proBtn.classList.remove('active');
 
             // Switch to Quick Bet tab if on Limit Order tab
             switchTab('quick');
