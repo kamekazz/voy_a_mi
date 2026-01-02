@@ -3,7 +3,7 @@ from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.utils.html import format_html
 from django.urls import reverse
 from django.utils import timezone
-from .models import User, Category, Event, Market, Order, Trade, Position, Transaction
+from .models import User, Category, Event, Market, Order, Trade, Position, Transaction, UserPreferences
 
 
 @admin.register(User)
@@ -394,3 +394,22 @@ class TransactionAdmin(admin.ModelAdmin):
 
     def has_change_permission(self, request, obj=None):
         return False  # Transactions are immutable
+
+
+@admin.register(UserPreferences)
+class UserPreferencesAdmin(admin.ModelAdmin):
+    list_display = ['user', 'ui_mode', 'updated_at']
+    list_filter = ['ui_mode']
+    search_fields = ['user__username', 'user__email']
+    readonly_fields = ['created_at', 'updated_at']
+    raw_id_fields = ['user']
+
+    fieldsets = (
+        (None, {
+            'fields': ('user', 'ui_mode')
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )

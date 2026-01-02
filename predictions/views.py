@@ -8,7 +8,7 @@ from django.db.models import Q, F, Sum
 from django.utils import timezone
 from decimal import Decimal, InvalidOperation
 
-from .models import User, Category, Event, Market, Order, Trade, Position, Transaction
+from .models import User, Category, Event, Market, Order, Trade, Position, Transaction, UserPreferences
 from .forms import UserRegistrationForm
 from .forms import OrderForm, QuickOrderForm
 from .engine.matching import get_orderbook, MatchingEngine
@@ -112,6 +112,8 @@ def market_detail(request, market_id):
     # Get user's position and open orders if logged in
     user_position = None
     user_orders = []
+    ui_mode = 'easy'  # Default for anonymous users
+
     if request.user.is_authenticated:
         user_position = Position.objects.filter(
             user=request.user, market=market
@@ -121,6 +123,9 @@ def market_detail(request, market_id):
             market=market,
             status__in=[Order.Status.OPEN, Order.Status.PARTIALLY_FILLED]
         )
+        # Get UI mode preference
+        preferences, _ = UserPreferences.objects.get_or_create(user=request.user)
+        ui_mode = preferences.ui_mode
 
     # Order form
     order_form = QuickOrderForm()
@@ -144,6 +149,7 @@ def market_detail(request, market_id):
         'user_position': user_position,
         'user_orders': user_orders,
         'order_form': order_form,
+        'ui_mode': ui_mode,
     }
     return render(request, 'predictions/market_detail_fixed.html', context)
 
@@ -979,6 +985,34 @@ def _calculate_market_sell_fill(bids, quantity):
 
     avg_price = int(total_proceeds_cents / shares_sold) if shares_sold > 0 else 50
     return shares_sold, total_proceeds_cents / 100, avg_price
+
+
+@login_required
+@require_POST
+def api_toggle_ui_mode(request):
+    """Toggle user's UI mode preference between easy and advanced."""
+    import json
+
+    try:
+        data = json.loads(request.body)
+        new_mode = data.get('mode', 'easy')
+
+        if new_mode not in ['easy', 'advanced']:
+            return JsonResponse({'error': 'Invalid mode'}, status=400)
+
+        preferences, _ = UserPreferences.objects.get_or_create(user=request.user)
+        preferences.ui_mode = new_mode
+        preferences.save()
+
+        return JsonResponse({
+            'success': True,
+            'mode': preferences.ui_mode,
+            'message': f'Switched to {preferences.get_ui_mode_display()}'
+        })
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
 
 
 def register(request):

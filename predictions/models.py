@@ -611,3 +611,34 @@ class Transaction(models.Model):
     def __str__(self):
         sign = '+' if self.amount > 0 else ''
         return f"{self.user.username}: {sign}${self.amount} ({self.get_type_display()})"
+
+
+class UserPreferences(models.Model):
+    """
+    User preferences for UI customization.
+    Stores user-specific settings like trading interface mode.
+    """
+    class UIMode(models.TextChoices):
+        EASY = 'easy', 'Easy Mode'
+        ADVANCED = 'advanced', 'Advanced Mode'
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='preferences'
+    )
+    ui_mode = models.CharField(
+        max_length=10,
+        choices=UIMode.choices,
+        default=UIMode.EASY,
+        help_text="Trading interface display mode"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "User Preferences"
+        verbose_name_plural = "User Preferences"
+
+    def __str__(self):
+        return f"{self.user.username} - {self.get_ui_mode_display()}"

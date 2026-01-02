@@ -37,10 +37,20 @@
             <div style="font-size: 0.8rem; color: var(--text-tertiary);"><span id="no-implied">{{ ob_prices.no_price }}</span>%</div>
         </div>
     </div>
+
+    <!-- UI Mode Toggle -->
+    <div class="ui-mode-toggle">
+        <span class="mode-label {% if ui_mode == 'easy' %}active{% endif %}" id="mode-label-easy">Easy</span>
+        <label class="toggle-switch">
+            <input type="checkbox" id="ui-mode-toggle" {% if ui_mode == 'advanced' %}checked{% endif %}>
+            <span class="toggle-slider"></span>
+        </label>
+        <span class="mode-label {% if ui_mode == 'advanced' %}active{% endif %}" id="mode-label-advanced">Pro</span>
+    </div>
 </div>
 
-<!-- Chart -->
-<div class="chart-container">
+<!-- Chart (Advanced mode only) -->
+<div class="chart-container advanced-only {% if ui_mode == 'easy' %}d-none{% endif %}" id="chart-section">
     <div class="d-flex justify-between items-center mb-2" style="padding: 0 8px;">
         <span style="font-size: 0.85rem; font-weight: 600;">Price History</span>
         <div style="display: flex; gap: 4px;">
@@ -62,7 +72,7 @@
 <div class="trading-card">
     <div class="tab-nav">
         <button class="tab-btn active" id="quick-bet-tab" onclick="switchTab('quick')">Quick Bet</button>
-        <button class="tab-btn" id="limit-order-tab" onclick="switchTab('limit')">Limit Order</button>
+        <button class="tab-btn advanced-only {% if ui_mode == 'easy' %}d-none{% endif %}" id="limit-order-tab" onclick="switchTab('limit')">Limit Order</button>
     </div>
 
     <div class="trade-form">
@@ -255,8 +265,8 @@
     </div>
 </div>
 
-<!-- Orderbook Section -->
-<div class="orderbook-section">
+<!-- Orderbook Section (Advanced mode only) -->
+<div class="orderbook-section advanced-only {% if ui_mode == 'easy' %}d-none{% endif %}" id="orderbook-section">
     <div class="section-title">Orderbook</div>
     <div
         style="background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border-color); overflow: hidden;">
@@ -286,8 +296,8 @@
     </div>
 </div>
 
-<!-- Trades Section -->
-<div class="orderbook-section mb-4">
+<!-- Trades Section (Advanced mode only) -->
+<div class="orderbook-section mb-4 advanced-only {% if ui_mode == 'easy' %}d-none{% endif %}" id="trades-section">
     <div class="section-title" style="display: flex; justify-content: space-between; align-items: center;">
         <span>Recent Trades</span>
         <a href="{% url 'predictions:trade_history' %}" class="trades-view-all-link">View All</a>
@@ -319,6 +329,102 @@
 
 <!-- Extra JS for Tabs (Custom) -->
 <script>
+    // ====== UI MODE TOGGLE ======
+    let currentUIMode = '{{ ui_mode|default:"easy" }}';
+    const isAuthenticated = {{ user.is_authenticated|yesno:"true,false" }};
+
+    function initUIMode() {
+        const toggle = document.getElementById('ui-mode-toggle');
+        if (!toggle) return;
+
+        // For anonymous users, check localStorage
+        if (!isAuthenticated) {
+            const savedMode = localStorage.getItem('voyami_ui_mode');
+            if (savedMode) {
+                currentUIMode = savedMode;
+                toggle.checked = (currentUIMode === 'advanced');
+                applyUIMode(currentUIMode);
+            }
+        }
+
+        toggle.addEventListener('change', function() {
+            const newMode = this.checked ? 'advanced' : 'easy';
+            toggleUIMode(newMode);
+        });
+
+        // Also allow clicking on labels
+        document.getElementById('mode-label-easy').addEventListener('click', function() {
+            toggle.checked = false;
+            toggleUIMode('easy');
+        });
+        document.getElementById('mode-label-advanced').addEventListener('click', function() {
+            toggle.checked = true;
+            toggleUIMode('advanced');
+        });
+    }
+
+    function toggleUIMode(mode) {
+        currentUIMode = mode;
+
+        // Update UI immediately
+        applyUIMode(mode);
+
+        if (isAuthenticated) {
+            // Save to server for authenticated users
+            fetch('/api/user/toggle-ui-mode/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                body: JSON.stringify({ mode: mode })
+            })
+            .then(function(response) { return response.json(); })
+            .then(function(data) {
+                console.log('UI mode updated:', data);
+            })
+            .catch(function(err) {
+                console.error('Error saving UI mode:', err);
+            });
+        } else {
+            // Save to localStorage for anonymous users
+            localStorage.setItem('voyami_ui_mode', mode);
+        }
+    }
+
+    function applyUIMode(mode) {
+        const advancedElements = document.querySelectorAll('.advanced-only');
+        const easyLabel = document.getElementById('mode-label-easy');
+        const advancedLabel = document.getElementById('mode-label-advanced');
+
+        if (mode === 'advanced') {
+            // Show all advanced elements
+            advancedElements.forEach(function(el) { el.classList.remove('d-none'); });
+            if (easyLabel) easyLabel.classList.remove('active');
+            if (advancedLabel) advancedLabel.classList.add('active');
+
+            // Initialize chart if not already done (only load in advanced mode)
+            if (!priceChart) {
+                setTimeout(initPriceChart, 100);
+            }
+        } else {
+            // Hide advanced elements
+            advancedElements.forEach(function(el) { el.classList.add('d-none'); });
+            if (easyLabel) easyLabel.classList.add('active');
+            if (advancedLabel) advancedLabel.classList.remove('active');
+
+            // Switch to Quick Bet tab if on Limit Order tab
+            switchTab('quick');
+        }
+    }
+
+    function getCsrfToken() {
+        const cookieValue = document.cookie
+            .split('; ')
+            .find(function(row) { return row.startsWith('csrftoken='); });
+        return cookieValue ? cookieValue.split('=')[1] : '';
+    }
+
     function switchTab(tab) {
         if (tab === 'quick') {
             document.getElementById('quick-bet-tab').classList.add('active');
@@ -1305,8 +1411,13 @@
 
         updateQuickBetEstimate();
 
-        // Chart
-        setTimeout(initPriceChart, 100);
+        // Initialize UI Mode toggle
+        initUIMode();
+
+        // Chart - only initialize in advanced mode
+        if (currentUIMode === 'advanced') {
+            setTimeout(initPriceChart, 100);
+        }
 
         // Timeframe button handlers
         document.querySelectorAll('[data-timeframe]').forEach(function(btn) {
