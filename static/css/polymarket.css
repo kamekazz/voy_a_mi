@@ -416,6 +416,32 @@ a {
     opacity: 1;
 }
 
+/* Buy/Sell toggle (without yes/no class) */
+.outcome-option.selected:not(.yes):not(.no) {
+    background: rgba(59, 130, 246, 0.1);
+    border-color: var(--pm-blue);
+    color: var(--pm-blue);
+    opacity: 1;
+}
+
+/* Specific styling for Sell option when selected */
+#limit-opt-sell.selected,
+#opt-sell.selected {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: var(--pm-red);
+    color: var(--pm-red);
+    opacity: 1;
+}
+
+/* Specific styling for Buy option when selected */
+#limit-opt-buy.selected,
+#opt-buy.selected {
+    background: rgba(16, 185, 129, 0.1);
+    border-color: var(--pm-green);
+    color: var(--pm-green);
+    opacity: 1;
+}
+
 .amount-input-group {
     background: var(--bg-main);
     border: 1px solid var(--border-color);
@@ -548,6 +574,11 @@ a {
 .orderbook-collapse {
     color: var(--text-tertiary);
     cursor: pointer;
+    transition: transform 0.2s ease;
+}
+
+.orderbook-collapse.collapsed {
+    transform: rotate(-90deg);
 }
 
 .orderbook-tabs {
@@ -584,18 +615,22 @@ a {
     background: var(--pm-red);
 }
 
-.orderbook-refresh {
+.orderbook-controls {
     margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
 .refresh-btn {
     background: transparent;
     border: 1px solid var(--border-color);
     color: var(--text-secondary);
-    padding: 4px 8px;
+    padding: 4px 10px;
     border-radius: 4px;
     cursor: pointer;
-    font-size: 0.85rem;
+    font-size: 0.9rem;
+    transition: all 0.15s ease;
 }
 
 .refresh-btn:hover {
@@ -603,14 +638,23 @@ a {
     color: var(--text-primary);
 }
 
+.price-increment {
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+    padding: 4px 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+}
+
 .orderbook-columns {
     display: grid;
-    grid-template-columns: 80px 1fr 1fr 1fr;
+    grid-template-columns: 50px 1fr 1fr 1fr;
     padding: 8px 16px;
-    font-size: 0.75rem;
+    font-size: 0.7rem;
     font-weight: 600;
     color: var(--text-tertiary);
     text-transform: uppercase;
+    letter-spacing: 0.5px;
     border-bottom: 1px solid var(--border-color);
 }
 
@@ -618,20 +662,39 @@ a {
     color: var(--text-secondary);
 }
 
+#orderbook-body {
+    transition: max-height 0.3s ease, opacity 0.3s ease;
+    overflow: hidden;
+}
+
+#orderbook-body.collapsed {
+    max-height: 0 !important;
+    opacity: 0;
+}
+
 .orderbook-asks,
 .orderbook-bids {
-    max-height: 200px;
+    max-height: 180px;
     overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Asks should display in reverse order (highest at top, lowest near spread) */
+.orderbook-asks {
+    flex-direction: column;
 }
 
 .orderbook-row {
     display: grid;
-    grid-template-columns: 80px 1fr 1fr 1fr;
-    padding: 6px 16px;
+    grid-template-columns: 50px 1fr 1fr 1fr;
+    padding: 8px 16px;
     font-size: 0.85rem;
     cursor: pointer;
     position: relative;
     transition: background 0.1s ease;
+    min-height: 36px;
+    align-items: center;
 }
 
 .orderbook-row:hover {
@@ -643,45 +706,50 @@ a {
     top: 0;
     bottom: 0;
     right: 0;
-    opacity: 0.15;
+    opacity: 0.12;
     pointer-events: none;
-    transition: width 0.2s ease;
+    transition: width 0.3s ease;
 }
 
 .orderbook-row.ask-row .depth-bar {
-    background: var(--pm-red);
+    background: linear-gradient(90deg, transparent, var(--pm-red));
 }
 
 .orderbook-row.bid-row .depth-bar {
-    background: var(--pm-green);
+    background: linear-gradient(90deg, transparent, var(--pm-green));
+}
+
+.orderbook-row .trade-cell {
+    display: flex;
+    align-items: center;
 }
 
 .orderbook-row .trade-btn {
     background: transparent;
-    border: 1px solid var(--border-color);
-    color: var(--text-secondary);
-    padding: 2px 8px;
-    border-radius: 4px;
+    border: none;
+    color: var(--text-tertiary);
+    padding: 4px 6px;
     cursor: pointer;
-    font-size: 0.75rem;
+    font-size: 0.8rem;
+    transition: all 0.15s ease;
+    opacity: 0.6;
 }
 
-.orderbook-row .trade-btn:hover {
-    background: var(--bg-hover);
+.orderbook-row:hover .trade-btn {
+    opacity: 1;
 }
 
 .orderbook-row.ask-row .trade-btn:hover {
-    border-color: var(--pm-red);
     color: var(--pm-red);
 }
 
 .orderbook-row.bid-row .trade-btn:hover {
-    border-color: var(--pm-green);
     color: var(--pm-green);
 }
 
 .orderbook-row .price-cell {
-    font-weight: 500;
+    font-weight: 600;
+    font-size: 0.9rem;
 }
 
 .orderbook-row.ask-row .price-cell {
@@ -692,7 +760,11 @@ a {
     color: var(--pm-green);
 }
 
-.orderbook-row .shares-cell,
+.orderbook-row .shares-cell {
+    color: var(--text-primary);
+    text-align: center;
+}
+
 .orderbook-row .total-cell {
     color: var(--text-secondary);
     text-align: right;
@@ -702,7 +774,7 @@ a {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 8px 16px;
+    padding: 10px 16px;
     background: var(--bg-main);
     border-top: 1px solid var(--border-color);
     border-bottom: 1px solid var(--border-color);
@@ -717,20 +789,26 @@ a {
 .asks-label {
     color: var(--pm-red);
     background: rgba(239, 68, 68, 0.15);
-    padding: 2px 8px;
+    padding: 3px 10px;
     border-radius: 4px;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
 }
 
 .bids-label {
     color: var(--pm-green);
     background: rgba(16, 185, 129, 0.15);
-    padding: 2px 8px;
+    padding: 3px 10px;
     border-radius: 4px;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
 }
 
 .spread-info {
     display: flex;
-    gap: 16px;
+    gap: 20px;
     color: var(--text-secondary);
 }
 
@@ -739,10 +817,11 @@ a {
 }
 
 .orderbook-empty {
-    padding: 24px;
+    padding: 20px;
     text-align: center;
     color: var(--text-tertiary);
     font-size: 0.85rem;
+    font-style: italic;
 }
 
 /* Utilities */

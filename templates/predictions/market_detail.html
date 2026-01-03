@@ -123,33 +123,51 @@
             </form>
         </div>
 
-        <!-- Limit Order Form (Simplified implementation) -->
+        <!-- Limit Order Form -->
         <div id="limit-order-panel" class="d-none">
-            <form method="post" action="{% url 'predictions:place_order' market.pk %}">
+            <form method="post" action="{% url 'predictions:place_order' market.pk %}" id="limit-order-form">
                 {% csrf_token %}
-                <div style="text-align: center; padding: 20px; color: var(--text-secondary);">
-                    Limit orders allow you to set a specific price.
-                </div>
-                <!-- Re-using basic inputs for simplicity in this artifact -->
-                <input type="hidden" name="order_type" value="BUY">
+
+                <!-- Buy/Sell Toggle -->
                 <div class="outcome-selector">
-                    <label class="outcome-option selected yes">YES</label>
-                    <label class="outcome-option no">NO</label>
+                    <label class="outcome-option selected" id="limit-opt-buy" onclick="setLimitSide('BUY')">Buy</label>
+                    <label class="outcome-option" id="limit-opt-sell" onclick="setLimitSide('SELL')">Sell</label>
                 </div>
-                <input type="radio" name="outcome" value="YES" checked class="d-none">
+                <input type="radio" name="order_type" id="limit_buy" value="BUY" checked class="d-none">
+                <input type="radio" name="order_type" id="limit_sell" value="SELL" class="d-none">
+
+                <!-- YES/NO Toggle -->
+                <div class="outcome-selector">
+                    <label class="outcome-option selected yes" id="limit-opt-yes" onclick="setLimitOutcome('YES')">YES</label>
+                    <label class="outcome-option no" id="limit-opt-no" onclick="setLimitOutcome('NO')">NO</label>
+                </div>
+                <input type="radio" name="outcome" id="limit_yes" value="YES" checked class="d-none">
+                <input type="radio" name="outcome" id="limit_no" value="NO" class="d-none">
 
                 <div class="amount-input-group">
                     <span class="amount-label">Price</span>
-                    <input type="number" class="amount-input" name="price" id="price_input" value="0.50" step="0.01"
-                        max="0.99">
+                    <input type="number" class="amount-input" name="price" id="limit_price" value="50" min="1" max="99" step="1">
                     <span class="amount-label">cents</span>
                 </div>
                 <div class="amount-input-group">
                     <span class="amount-label">Qty</span>
-                    <input type="number" class="amount-input" name="quantity" id="quantity_input" value="10">
+                    <input type="number" class="amount-input" name="quantity" id="limit_quantity" value="10" min="1">
                     <span class="amount-label">shares</span>
                 </div>
-                <button type="submit" class="btn btn-outline w-100">Place Limit Order</button>
+
+                <!-- Limit Order Summary -->
+                <div class="order-summary">
+                    <div class="summary-row">
+                        <span>Total Cost/Proceeds</span>
+                        <span id="limit-total">$5.00</span>
+                    </div>
+                    <div class="summary-row">
+                        <span id="limit-potential-label">Potential Payout</span>
+                        <span id="limit-potential">$10.00</span>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-primary w-100" id="limit-submit-btn">Place Limit Buy Order</button>
             </form>
         </div>
 
@@ -167,51 +185,53 @@
     <div class="orderbook-container">
         <!-- Header with tabs -->
         <div class="orderbook-header">
-            <div class="orderbook-title">Order Book <span class="orderbook-help" title="View buy and sell orders">?</span></div>
-            <div class="orderbook-collapse">▼</div>
+            <div class="orderbook-title">Order Book <span class="orderbook-help" title="Shows all open limit orders. Asks (red) are sell orders. Bids (green) are buy orders.">?</span></div>
+            <div class="orderbook-collapse" onclick="toggleOrderbook()">▼</div>
         </div>
 
         <!-- Tab bar -->
         <div class="orderbook-tabs">
             <button class="orderbook-tab active" id="tab-yes" onclick="switchOrderbookTab('yes')">Trade Yes</button>
             <button class="orderbook-tab" id="tab-no" onclick="switchOrderbookTab('no')">Trade No</button>
-            <div class="orderbook-refresh">
+            <div class="orderbook-controls">
                 <button class="refresh-btn" onclick="fetchOrderBook()" title="Refresh">↻</button>
+                <span class="price-increment">1¢</span>
             </div>
         </div>
 
         <!-- Column headers -->
         <div class="orderbook-columns">
-            <div class="col-trade">TRADE <span id="col-trade-type">YES</span> ▼</div>
+            <div class="col-trade">TRADE <span id="col-trade-type">YES</span></div>
             <div class="col-price">PRICE</div>
             <div class="col-shares">SHARES</div>
             <div class="col-total">TOTAL</div>
         </div>
 
-        <!-- Asks section (sells) - displayed with highest price at top -->
-        <div class="orderbook-asks" id="orderbook-asks">
-            <!-- JS injected - rows will be inserted here -->
-            <div class="orderbook-empty">Loading...</div>
-        </div>
+        <!-- Orderbook body (collapsible) -->
+        <div id="orderbook-body">
+            <!-- Asks section (sells) - displayed with highest price at top, lowest at bottom (near spread) -->
+            <div class="orderbook-asks" id="orderbook-asks">
+                <div class="orderbook-empty">No asks</div>
+            </div>
 
-        <!-- Spread row -->
-        <div class="orderbook-spread" id="orderbook-spread">
-            <div class="spread-label">
-                <span class="asks-label">Asks</span>
+            <!-- Spread row -->
+            <div class="orderbook-spread" id="orderbook-spread">
+                <div class="spread-label">
+                    <span class="asks-label">Asks</span>
+                </div>
+                <div class="spread-info">
+                    <span>Last: <span id="spread-last">--</span></span>
+                    <span>Spread: <span id="spread-value">--</span></span>
+                </div>
+                <div class="spread-label">
+                    <span class="bids-label">Bids</span>
+                </div>
             </div>
-            <div class="spread-info">
-                <span>Last: <span id="spread-last">--</span></span>
-                <span>Spread: <span id="spread-value">--</span></span>
-            </div>
-            <div class="spread-label">
-                <span class="bids-label">Bids</span>
-            </div>
-        </div>
 
-        <!-- Bids section (buys) - highest price at top -->
-        <div class="orderbook-bids" id="orderbook-bids">
-            <!-- JS injected - rows will be inserted here -->
-            <div class="orderbook-empty">Loading...</div>
+            <!-- Bids section (buys) - highest price at top (near spread) -->
+            <div class="orderbook-bids" id="orderbook-bids">
+                <div class="orderbook-empty">No bids</div>
+            </div>
         </div>
     </div>
 </div>
@@ -278,6 +298,66 @@
         }
         document.getElementById('quick_type_' + type.toLowerCase()).dispatchEvent(new Event('change'));
     }
+
+    // Limit Order Functions
+    function setLimitSide(side) {
+        if (side === 'BUY') {
+            document.getElementById('limit_buy').checked = true;
+            document.getElementById('limit-opt-buy').classList.add('selected');
+            document.getElementById('limit-opt-sell').classList.remove('selected');
+        } else {
+            document.getElementById('limit_sell').checked = true;
+            document.getElementById('limit-opt-sell').classList.add('selected');
+            document.getElementById('limit-opt-buy').classList.remove('selected');
+        }
+        updateLimitOrderSummary();
+    }
+
+    function setLimitOutcome(outcome) {
+        if (outcome === 'YES') {
+            document.getElementById('limit_yes').checked = true;
+            document.getElementById('limit-opt-yes').classList.add('selected');
+            document.getElementById('limit-opt-no').classList.remove('selected');
+        } else {
+            document.getElementById('limit_no').checked = true;
+            document.getElementById('limit-opt-no').classList.add('selected');
+            document.getElementById('limit-opt-yes').classList.remove('selected');
+        }
+        updateLimitOrderSummary();
+    }
+
+    function updateLimitOrderSummary() {
+        const price = parseInt(document.getElementById('limit_price').value) || 0;
+        const quantity = parseInt(document.getElementById('limit_quantity').value) || 0;
+        const isBuy = document.getElementById('limit_buy').checked;
+        const isYes = document.getElementById('limit_yes').checked;
+
+        const total = (price * quantity / 100).toFixed(2);
+        const payout = quantity.toFixed(2);
+
+        document.getElementById('limit-total').textContent = '$' + total;
+
+        if (isBuy) {
+            document.getElementById('limit-potential-label').textContent = 'Potential Payout';
+            document.getElementById('limit-potential').textContent = '$' + payout;
+            document.getElementById('limit-submit-btn').textContent = 'Place Limit Buy Order';
+            document.getElementById('limit-submit-btn').className = 'btn btn-success w-100';
+        } else {
+            document.getElementById('limit-potential-label').textContent = 'You Receive';
+            document.getElementById('limit-potential').textContent = '$' + total;
+            document.getElementById('limit-submit-btn').textContent = 'Place Limit Sell Order';
+            document.getElementById('limit-submit-btn').className = 'btn btn-danger w-100';
+        }
+    }
+
+    // Initialize limit order listeners
+    document.addEventListener('DOMContentLoaded', function() {
+        const limitPrice = document.getElementById('limit_price');
+        const limitQty = document.getElementById('limit_quantity');
+        if (limitPrice) limitPrice.addEventListener('input', updateLimitOrderSummary);
+        if (limitQty) limitQty.addEventListener('input', updateLimitOrderSummary);
+        updateLimitOrderSummary();
+    });
 </script>
 
 {% endblock %}
@@ -608,6 +688,12 @@ console.log('=== SCRIPT STARTING ===');
             // Get the relevant data based on tab
             const asks = contractType === 'yes' ? book.yes_asks : book.no_asks;
             const bids = contractType === 'yes' ? book.yes_bids : book.no_bids;
+
+            // DEBUG: Log what we're rendering
+            console.log('=== ORDERBOOK RENDER ===');
+            console.log('Contract type:', contractType);
+            console.log('Asks (sell orders):', asks);
+            console.log('Bids (buy orders):', bids);
             const lastPrice = contractType === 'yes' ? marketData.last_yes_price : marketData.last_no_price;
             const bestBid = contractType === 'yes' ? marketData.best_yes_bid : marketData.best_no_bid;
             const bestAsk = contractType === 'yes' ? marketData.best_yes_ask : marketData.best_no_ask;
@@ -629,39 +715,65 @@ console.log('=== SCRIPT STARTING ===');
             spreadValue.textContent = spread !== null ? spread + '¢' : '--';
         }
 
+        function toggleOrderbook() {
+            const body = document.getElementById('orderbook-body');
+            const collapseBtn = document.querySelector('.orderbook-collapse');
+            if (body.classList.contains('collapsed')) {
+                body.classList.remove('collapsed');
+                collapseBtn.classList.remove('collapsed');
+            } else {
+                body.classList.add('collapsed');
+                collapseBtn.classList.add('collapsed');
+            }
+        }
+
         function renderOrderbookRows(rows, type, maxQty, contractType) {
             if (!rows || rows.length === 0) {
-                return '<div class="orderbook-empty">No ' + (type === 'ask' ? 'asks' : 'bids') + '</div>';
+                const label = type === 'ask' ? 'sell orders (asks)' : 'buy orders (bids)';
+                return '<div class="orderbook-empty">No ' + label + '</div>';
             }
 
             let html = '';
+            // Inline colors for debugging
+            const priceColor = type === 'ask' ? '#EF4444' : '#10B981';  // Red for asks, Green for bids
+            const depthColor = type === 'ask' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(16, 185, 129, 0.2)';
+
             rows.forEach(row => {
-                const depthPercent = (row.quantity / maxQty) * 100;
+                const depthPercent = Math.min((row.quantity / maxQty) * 100, 100);
                 const total = (row.price * row.quantity / 100).toFixed(2);
                 const rowClass = type === 'ask' ? 'ask-row' : 'bid-row';
-                const side = type === 'ask' ? 'sell' : 'buy';
+                // For asks (sell orders on book), clicking means we BUY from them
+                // For bids (buy orders on book), clicking means we SELL to them
+                const actionSide = type === 'ask' ? 'buy' : 'sell';
 
                 html += `
-                <div class="orderbook-row ${rowClass}" onclick="fillPriceFromRow(${row.price})" data-price="${row.price}" data-quantity="${row.quantity}">
-                    <div class="depth-bar" style="width: ${depthPercent}%"></div>
+                <div class="orderbook-row ${rowClass}" onclick="fillPriceFromRow(${row.price}, '${actionSide}')" data-price="${row.price}" data-quantity="${row.quantity}" style="display: grid; grid-template-columns: 50px 1fr 1fr 1fr; padding: 8px 16px; position: relative; cursor: pointer;">
+                    <div class="depth-bar" style="position: absolute; top: 0; bottom: 0; right: 0; width: ${depthPercent}%; background: ${depthColor};"></div>
                     <div class="trade-cell">
-                        <button class="trade-btn" onclick="event.stopPropagation(); instantTrade(${row.price}, ${row.quantity}, '${side}', '${contractType}')" title="Click to trade">⚡</button>
+                        <button class="trade-btn" onclick="event.stopPropagation(); instantTrade(${row.price}, ${row.quantity}, '${actionSide}', '${contractType}')" title="Click to ${actionSide} at this price" style="background: none; border: none; cursor: pointer;">⚡</button>
                     </div>
-                    <div class="price-cell">${row.price}¢</div>
-                    <div class="shares-cell">${row.quantity.toLocaleString()}</div>
-                    <div class="total-cell">$${total}</div>
+                    <div class="price-cell" style="color: ${priceColor}; font-weight: 600;">${row.price}¢</div>
+                    <div class="shares-cell" style="text-align: center;">${row.quantity.toLocaleString()}</div>
+                    <div class="total-cell" style="text-align: right;">$${total}</div>
                 </div>`;
             });
+            console.log('Rendered HTML for ' + type + ':', html.substring(0, 200) + '...');
             return html;
         }
 
-        function fillPriceFromRow(priceInCents) {
+        function fillPriceFromRow(priceInCents, actionSide) {
             // Fill the limit order price input
             const limitPriceInput = document.getElementById('limit_price');
             if (limitPriceInput) {
                 limitPriceInput.value = priceInCents;
                 // Trigger change event to update calculations
                 limitPriceInput.dispatchEvent(new Event('input'));
+            }
+            // Set the buy/sell toggle based on what action we'd take
+            if (actionSide === 'buy') {
+                setLimitSide('BUY');
+            } else {
+                setLimitSide('SELL');
             }
             // Also switch to limit order tab if on quick bet
             switchTab('limit');

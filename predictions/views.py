@@ -151,7 +151,7 @@ def market_detail(request, market_id):
         'order_form': order_form,
         'ui_mode': ui_mode,
     }
-    return render(request, 'predictions/market_detail_fixed.html', context)
+    return render(request, 'predictions/market_detail.html', context)
 
 def order_book_json(request, market_id):
     market = get_object_or_404(Market, pk=market_id)

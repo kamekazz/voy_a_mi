@@ -444,15 +444,6 @@ class Trade(models.Model):
         return f"{self.quantity} {self.contract_type.upper()} @ {self.price}c"
 
 
-class UserBalance(models.Model):
-    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
-    balance = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
-    reserved_balance = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))  # Funds locked in open orders
-
-    def __str__(self):
-        return f"{self.user.username}: ${self.balance} (Reserved: ${self.reserved_balance})"
-
-
 class Position(models.Model):
     """
     User's holdings in a specific market.
