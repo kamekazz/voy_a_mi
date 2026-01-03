@@ -1,13 +1,15 @@
 # Django core
-Django>=4.2,<5.0
+Django>=6.0
 
 # Database
 psycopg2-binary>=2.9.9
 
-# Real-time WebSockets
-channels>=4.0.0
-channels-redis>=4.1.0
-daphne>=4.0.0
+# REST API
+djangorestframework>=3.14.0
+djangorestframework-simplejwt>=5.3.0
+drf-spectacular>=0.27.0
+django-cors-headers>=4.3.0
+django-filter>=25.0
 
 # Payment processing
 stripe>=7.0.0
@@ -22,6 +24,3 @@ Pillow>=10.0.0
 
 # Environment variables
 python-dotenv>=1.0.0
-
-# Development tools
-django-debug-toolbar>=4.2.0
