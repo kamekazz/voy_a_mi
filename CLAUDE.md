@@ -4,17 +4,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a Django-based prediction market platform where users can trade on the outcomes of real-world events. Users buy and sell contracts (YES/NO) that pay out based on event outcomes.
+This is a Django-based prediction market **REST API** where users can trade on the outcomes of real-world events. Users buy and sell contracts (YES/NO) that pay out based on event outcomes. This project is designed as a **backend API for mobile apps** - no frontend templates.
 
 ## Tech Stack
 
-- **Backend**: Django 5/6 (Python 3.x)
+- **Backend**: Django 6 (Python 3.x)
 - **Database**: SQLite (development), PostgreSQL (production)
-- **Frontend**: Django templates with HTML/CSS/JavaScript, Bootstrap 5
-- **Real-time**: Django Channels with WebSockets (for live price updates)
+- **API Framework**: Django REST Framework
+- **Authentication**: JWT Tokens (djangorestframework-simplejwt)
+- **Documentation**: OpenAPI/Swagger (drf-spectacular)
 - **Trading Engine**: Custom order book with price-time priority matching
 - **Payments**: Stripe or PayPal integration
-- **Deployment**: Daphne (ASGI) + Gunicorn + Nginx
+- **Deployment**: Gunicorn + Nginx
 
 ## Common Commands
 
@@ -31,9 +32,6 @@ python manage.py run_engine
 
 # Create superuser for admin
 python manage.py createsuperuser
-
-# Collect static files (production)
-python manage.py collectstatic
 ```
 
 ## Architecture
@@ -77,32 +75,35 @@ python manage.py collectstatic
 7. **Event Management**: Admins create events with multiple markets
 8. **Market Settlement**: Contracts pay out $1 if correct, $0 if wrong
 9. **Admin Panel**: Django admin for event creation and market management
-10. **Real-Time Updates**: WebSocket broadcasts for live price/orderbook updates
+10. **JWT Authentication**: Secure token-based authentication for mobile apps
 
-### URL Structure
+### API Structure
 
-- `/` - Homepage with active markets
-- `/events/` - Browse all events
-- `/events/<slug>/` - Event detail with all markets
-- `/market/<id>/` - Market trading interface with orderbook
-- `/portfolio/` - User's positions and P&L
-- `/orders/` - Order history
-- `/trades/` - Trade history
-- `/transactions/` - Balance transaction history
-- `/login/` - User login
-- `/logout/` - User logout
-- `/register/` - User registration
-- `/cancel_order/<id>/` - Cancel an order
-- `/markets/<id>/mint/` - Mint complete set
-- `/markets/<id>/redeem/` - Redeem complete set
-- `/admin/` - Django admin panel
-
-### API Endpoints
-
-- `/api/markets/<id>/orderbook/` - Order book JSON
-- `/api/markets/<id>/trades/` - Recent trades JSON
-- `/api/markets/<id>/position/` - User position JSON
-- `/api/markets/<id>/price-history/` - Price history JSON
+```
+/api/
+  auth/
+    register/       POST - Create new account
+    login/          POST - Get JWT tokens
+    refresh/        POST - Refresh access token
+  user/
+    profile/        GET, PATCH - User profile
+    portfolio/      GET - Positions + P&L
+    trades/         GET - Trade history
+    transactions/   GET - Transaction history
+  categories/       GET - List categories
+  events/           GET - List/detail events
+  markets/          GET - List/detail markets
+    <id>/orderbook/ GET - Order book
+    <id>/trades/    GET - Recent trades
+    <id>/position/  GET - User's position
+    <id>/orders/    POST - Place order
+    <id>/mint/      POST - Mint complete set
+    <id>/redeem/    POST - Redeem complete set
+  orders/           GET - User's orders
+    <id>/           DELETE - Cancel order
+  docs/             GET - Swagger UI
+  schema/           GET - OpenAPI schema
+```
 
 ### Custom Exceptions
 
@@ -117,11 +118,16 @@ python manage.py collectstatic
 
 ## Development Guidelines
 
-- Use Django's built-in authentication system
-- Apply `@login_required` decorator for protected views (trading, orders)
+- All endpoints use JWT authentication (except public read endpoints)
+- Use `Authorization: Bearer <token>` header for authenticated requests
 - Handle order matching with database transactions to prevent race conditions
 - Validate orders: price must be 1-99 cents, quantity must be positive
 - Update market prices cache after each trade
-- Use Django's CSRF protection for all forms
 - Store payment credentials in environment variables, never in code
 - Run `python manage.py run_engine` in a separate terminal for order matching
+
+## API Documentation
+
+See `API.md` for complete API documentation with request/response examples.
+
+Interactive documentation available at `/api/docs/` when server is running.

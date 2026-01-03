@@ -1,10 +1,11 @@
 # Voy a Mi
 
 [![Python](https://img.shields.io/badge/Python-3.x-blue.svg)](https://www.python.org/)
-[![Django](https://img.shields.io/badge/Django-5.x-green.svg)](https://www.djangoproject.com/)
+[![Django](https://img.shields.io/badge/Django-6.x-green.svg)](https://www.djangoproject.com/)
+[![DRF](https://img.shields.io/badge/DRF-3.14-red.svg)](https://www.django-rest-framework.org/)
 [![License](https://img.shields.io/badge/License-Open%20Source-brightgreen.svg)](#license)
 
-**Voy a Mi** is an open-source prediction market platform built with Django. It allows users to trade on the outcomes of real-world events by buying and selling YES/NO contracts that pay out based on the event results.
+**Voy a Mi** is an open-source prediction market **REST API** built with Django. It provides a backend for mobile apps where users can trade on the outcomes of real-world events by buying and selling YES/NO contracts.
 
 > *"Voy a Mi"* roughly means "I bet on myself" in Spanish, capturing the spirit of confidence in your predictions!
 
@@ -18,9 +19,10 @@ Each market uses **YES/NO contracts** that settle at:
 
 ### Key Goals
 
-- **Accessible Prediction Markets**: Make it easy for anyone to create or participate in markets for events in politics, sports, finance, etc.
-- **Real-Time Trading**: Provide up-to-the-second updates on prices and trades using WebSockets
-- **Transparency and Learning**: Offer a clear view of how prediction markets work for educational and experimental purposes
+- **Mobile-First API**: Pure REST API designed for mobile app integration
+- **Accessible Prediction Markets**: Make it easy for anyone to participate in markets for events in politics, sports, finance, etc.
+- **Secure Authentication**: JWT token-based authentication for mobile apps
+- **Transparency and Learning**: Offer a clear view of how prediction markets work
 - **Open Collaboration**: Build this as a community-driven, non-profit project
 
 ## Features
@@ -43,21 +45,22 @@ Each market uses **YES/NO contracts** that settle at:
 
 - **Admin Panel**: Secure Django admin interface for managing categories, events, markets, and users.
 
-- **Real-Time Updates**: Django Channels and WebSockets push live updates - prices and order books update instantly.
+- **JWT Authentication**: Secure token-based authentication for mobile apps.
 
-- **Analytics (Planned)**: Market volume, price charts, and leaderboards for top forecasters.
+- **OpenAPI Documentation**: Interactive Swagger UI documentation at `/api/docs/`.
 
 ## Tech Stack
 
 | Component | Technology |
 |-----------|------------|
-| **Backend** | Django 5/6 (Python 3) |
+| **Backend** | Django 6 (Python 3) |
+| **API Framework** | Django REST Framework |
+| **Authentication** | JWT (djangorestframework-simplejwt) |
+| **Documentation** | OpenAPI/Swagger (drf-spectacular) |
 | **Database** | SQLite (dev) / PostgreSQL (prod) |
-| **Frontend** | Django Templates, Bootstrap 5, Bootstrap Icons |
-| **Real-Time** | Django Channels, WebSockets, Daphne (ASGI) |
 | **Trading Engine** | Custom order book with price-time priority matching |
 | **Payments** | Stripe & PayPal SDK (integration ready) |
-| **Deployment** | Gunicorn, Daphne, Nginx, Whitenoise |
+| **Deployment** | Gunicorn, Nginx, Whitenoise |
 | **Config** | python-dotenv for environment variables |
 
 ## Installation & Setup
@@ -100,8 +103,7 @@ python manage.py createsuperuser
 python manage.py runserver
 ```
 
-Open http://localhost:8000/ in your browser.
-
+API available at http://localhost:8000/api/
 
 ### 7. Run the Matching Engine (Important!)
 
@@ -115,34 +117,73 @@ python manage.py run_engine
 
 You should see output indicating the engine is starting and processing trades.
 
-## URL Structure
-
-| Path | Description |
-|------|-------------|
-| `/` | Homepage with active markets |
-| `/events/` | Browse all events |
-| `/events/<slug>/` | Event detail with all markets |
-| `/market/<id>/` | Market trading interface with orderbook |
-| `/portfolio/` | User's positions and P&L |
-| `/orders/` | Order history |
-| `/trades/` | Trade history |
-| `/transactions/` | Balance transaction history |
-| `/login/` | User login |
-| `/logout/` | User logout |
-| `/register/` | User registration |
-| `/cancel_order/<id>/` | Cancel an order |
-| `/markets/<id>/mint/` | Mint complete set (1 YES + 1 NO) |
-| `/markets/<id>/redeem/` | Redeem complete set for $1 |
-| `/admin/` | Django admin panel |
-
 ## API Endpoints
 
-| Path | Description |
-|------|-------------|
-| `/api/markets/<id>/orderbook/` | Order book JSON |
-| `/api/markets/<id>/trades/` | Recent trades JSON |
-| `/api/markets/<id>/position/` | User position JSON |
-| `/api/markets/<id>/price-history/` | Price history JSON |
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| POST | `/api/auth/register/` | No | Create new account |
+| POST | `/api/auth/login/` | No | Get JWT tokens |
+| POST | `/api/auth/refresh/` | No | Refresh access token |
+| GET | `/api/user/profile/` | Yes | Get user profile |
+| PATCH | `/api/user/profile/` | Yes | Update user profile |
+| GET | `/api/user/portfolio/` | Yes | Get positions + P&L |
+| GET | `/api/user/trades/` | Yes | Get trade history |
+| GET | `/api/user/transactions/` | Yes | Get transaction history |
+| GET | `/api/categories/` | No | List all categories |
+| GET | `/api/events/` | No | List all events |
+| GET | `/api/events/<slug>/` | No | Get event details |
+| GET | `/api/markets/` | No | List all markets |
+| GET | `/api/markets/<id>/` | No | Get market details |
+| GET | `/api/markets/<id>/orderbook/` | No | Get order book |
+| GET | `/api/markets/<id>/trades/` | No | Get recent trades |
+| GET | `/api/markets/<id>/position/` | Yes | Get user's position |
+| GET | `/api/markets/<id>/price-history/` | No | Get price history |
+| POST | `/api/markets/<id>/orders/` | Yes | Place an order |
+| POST | `/api/markets/<id>/quick-order/` | Yes | Quick bet |
+| POST | `/api/markets/<id>/order-preview/` | Yes | Preview order |
+| POST | `/api/markets/<id>/mint/` | Yes | Mint complete set |
+| POST | `/api/markets/<id>/redeem/` | Yes | Redeem complete set |
+| GET | `/api/orders/` | Yes | List user's orders |
+| DELETE | `/api/orders/<id>/` | Yes | Cancel an order |
+| GET | `/api/docs/` | No | Swagger UI docs |
+| GET | `/api/schema/` | No | OpenAPI schema |
+
+See `API.md` for complete API documentation with request/response examples.
+
+## Authentication
+
+This API uses JWT (JSON Web Tokens) for authentication.
+
+### Getting Tokens
+
+```bash
+# Login to get tokens
+curl -X POST http://localhost:8000/api/auth/login/ \
+  -H "Content-Type: application/json" \
+  -d '{"username": "your_username", "password": "your_password"}'
+```
+
+Response:
+```json
+{
+  "access": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+  "refresh": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
+}
+```
+
+### Using Tokens
+
+Include the access token in the Authorization header:
+
+```bash
+curl http://localhost:8000/api/user/profile/ \
+  -H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
+```
+
+### Token Lifetime
+
+- **Access Token**: 60 minutes
+- **Refresh Token**: 7 days
 
 ## Production Deployment
 
@@ -150,10 +191,9 @@ For production setups:
 
 1. Configure environment variables (secret keys, Stripe/PayPal keys, database URL)
 2. Use PostgreSQL instead of SQLite
-3. Run with Daphne (ASGI) and Gunicorn (WSGI) behind Nginx
+3. Run with Gunicorn behind Nginx
 4. Use the included `voy_a_mi.service` systemd file for deployment
 5. Run `python manage.py collectstatic` for static files
-
 
 ## Development Workflow
 
@@ -180,10 +220,10 @@ When working on features, follow this standard git workflow to keep your branch 
 
 ### Common Commands
 
--   **Run Tests:** `python manage.py test`
 -   **Make Migrations:** `python manage.py makemigrations`
 -   **Migrate:** `python manage.py migrate`
 -   **Run Engine:** `python manage.py run_engine`
+-   **Run Server:** `python manage.py runserver`
 
 ## Contributing
 
