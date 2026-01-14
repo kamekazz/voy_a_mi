@@ -38,14 +38,14 @@ python manage.py createsuperuser
 
 ### Core Models
 
-- **User**: Extends Django's AbstractUser; has `balance` and `reserved_balance` for trading
+- **User**: Extends Django's AbstractUser; has `tokens` and `reserved_tokens` for trading. New users automatically receive 500 tokens upon registration
 - **Category**: Categories for organizing prediction events
 - **Event**: Parent container for related markets (e.g., "2024 US Presidential Election")
 - **Market**: Tradeable contracts within an event (YES/NO outcomes)
 - **Order**: Orders in the orderbook (buy/sell)
 - **Trade**: Matched trades between orders
 - **Position**: User's holdings in a specific market (YES/NO contracts with reserved quantities)
-- **Transaction**: Audit trail for all balance changes
+- **Transaction**: Audit trail for all token changes
 
 ### Order Types
 
@@ -62,20 +62,22 @@ python manage.py createsuperuser
 
 ### Transaction Types
 
-`DEPOSIT`, `WITHDRAWAL`, `TRADE_BUY`, `TRADE_SELL`, `SETTLEMENT_WIN`, `SETTLEMENT_LOSS`, `ORDER_RESERVE`, `ORDER_RELEASE`, `REFUND`, `MINT`, `REDEEM`, `MINT_MATCH`, `MERGE_MATCH`
+`DEPOSIT`, `WITHDRAWAL`, `TRADE_BUY`, `TRADE_SELL`, `SETTLEMENT_WIN`, `SETTLEMENT_LOSS`, `ORDER_RESERVE`, `ORDER_RELEASE`, `REFUND`, `MINT`, `REDEEM`, `MINT_MATCH`, `MERGE_MATCH`, `EVENT_REWARD`
 
 ### Key Features
 
-1. **Prediction Market Trading**: Users buy/sell YES/NO contracts on event outcomes
-2. **Order Book System**: Price-time priority matching engine
-3. **Complete Set Minting**: Users pay $1 to mint 1 YES + 1 NO share (Polymarket-style)
-4. **Complete Set Redemption**: Users burn 1 YES + 1 NO share to receive $1
-5. **Mint/Merge Matching**: Complementary orders matched automatically
-6. **Portfolio Management**: Track positions, P&L, and transaction history
-7. **Event Management**: Admins create events with multiple markets
-8. **Market Settlement**: Contracts pay out $1 if correct, $0 if wrong
-9. **Admin Panel**: Django admin for event creation and market management
-10. **JWT Authentication**: Secure token-based authentication for mobile apps
+1. **Token-Based Economy**: Users trade with tokens instead of real money. New users receive 500 tokens upon registration
+2. **Event Rewards System**: Users can earn additional tokens through event-based rewards (EVENT_REWARD transaction type)
+3. **Prediction Market Trading**: Users buy/sell YES/NO contracts on event outcomes
+4. **Order Book System**: Price-time priority matching engine
+5. **Complete Set Minting**: Users pay 1 token to mint 1 YES + 1 NO share (Polymarket-style)
+6. **Complete Set Redemption**: Users burn 1 YES + 1 NO share to receive 1 token
+7. **Mint/Merge Matching**: Complementary orders matched automatically
+8. **Portfolio Management**: Track positions, P&L, and transaction history
+9. **Event Management**: Admins create events with multiple markets
+10. **Market Settlement**: Contracts pay out 1 token if correct, 0 if wrong
+11. **Admin Panel**: Django admin for event creation and market management
+12. **JWT Authentication**: Secure token-based authentication for mobile apps
 
 ### API Structure
 
@@ -107,7 +109,7 @@ python manage.py createsuperuser
 
 ### Custom Exceptions
 
-- `InsufficientFundsError` - User lacks balance for order
+- `InsufficientFundsError` - User lacks tokens for order
 - `InsufficientPositionError` - User lacks shares for sell order
 - `InvalidPriceError` - Price outside 1-99 cents range
 - `InvalidQuantityError` - Quantity must be positive

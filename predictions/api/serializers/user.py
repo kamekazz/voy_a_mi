@@ -13,8 +13,8 @@ class UserSerializer(serializers.ModelSerializer):
 
 
 class UserProfileSerializer(serializers.ModelSerializer):
-    """Full user profile with balance information."""
-    available_balance = serializers.DecimalField(
+    """Full user profile with token information."""
+    available_tokens = serializers.DecimalField(
         max_digits=12,
         decimal_places=2,
         read_only=True
@@ -28,17 +28,17 @@ class UserProfileSerializer(serializers.ModelSerializer):
             'email',
             'first_name',
             'last_name',
-            'balance',
-            'reserved_balance',
-            'available_balance',
+            'tokens',
+            'reserved_tokens',
+            'available_tokens',
             'date_joined',
         ]
         read_only_fields = [
             'id',
             'username',
-            'balance',
-            'reserved_balance',
-            'available_balance',
+            'tokens',
+            'reserved_tokens',
+            'available_tokens',
             'date_joined',
         ]
 

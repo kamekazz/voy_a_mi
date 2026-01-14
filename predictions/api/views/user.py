@@ -19,14 +19,14 @@ class UserProfileView(APIView):
     """
     API endpoint for user profile.
 
-    GET /api/user/profile/ - Get user profile with balance
+    GET /api/user/profile/ - Get user profile with tokens
     PATCH /api/user/profile/ - Update profile (name, email)
     """
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
         responses={200: UserProfileSerializer},
-        description='Get current user profile with balance information'
+        description='Get current user profile with tokens information'
     )
     def get(self, request):
         """GET /api/user/profile/"""
@@ -81,9 +81,9 @@ class PortfolioView(APIView):
                 context={'request': request}
             ).data,
             'summary': {
-                'balance': float(request.user.balance),
-                'reserved_balance': float(request.user.reserved_balance),
-                'available_balance': float(request.user.available_balance),
+                'tokens': float(request.user.tokens),
+                'reserved_tokens': float(request.user.reserved_tokens),
+                'available_tokens': float(request.user.available_tokens),
                 'total_unrealized_pnl': float(total_unrealized),
                 'total_realized_pnl': float(total_realized),
                 'positions_count': positions.count(),
@@ -113,7 +113,7 @@ class UserTransactionsView(generics.ListAPIView):
     """
     API endpoint for user's transaction history.
 
-    GET /api/user/transactions/ - List all balance transactions
+    GET /api/user/transactions/ - List all token transactions
     GET /api/user/transactions/?type=trade_buy - Filter by type
     """
     permission_classes = [IsAuthenticated]

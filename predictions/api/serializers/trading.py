@@ -247,7 +247,7 @@ class OrderPreviewResponseSerializer(serializers.Serializer):
     total_proceeds = serializers.DecimalField(max_digits=10, decimal_places=2)
     potential_payout = serializers.DecimalField(max_digits=10, decimal_places=2)
     implied_probability = serializers.IntegerField()
-    user_balance = serializers.DecimalField(max_digits=10, decimal_places=2)
+    user_tokens = serializers.DecimalField(max_digits=10, decimal_places=2)
     user_position = serializers.DictField()
     current_yes_price = serializers.IntegerField()
     current_no_price = serializers.IntegerField()

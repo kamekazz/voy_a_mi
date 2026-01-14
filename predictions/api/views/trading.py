@@ -54,8 +54,8 @@ class OrderViewSet(viewsets.ModelViewSet):
         if order.order_type == 'mint_set':
             # Refund reserved funds for mint request
             refund = Decimal(remaining_qty)
-            user.reserved_balance -= refund
-            user.balance += refund
+            user.reserved_tokens -= refund
+            user.tokens += refund
             user.save()
 
         elif order.order_type == 'redeem_set':
@@ -70,8 +70,8 @@ class OrderViewSet(viewsets.ModelViewSet):
             # Refund reserved funds for buy order
             refund_price = order.price if order.price is not None else Decimal('1.00')
             refund = refund_price * remaining_qty
-            user.reserved_balance -= refund
-            user.balance += refund
+            user.reserved_tokens -= refund
+            user.tokens += refund
             user.save()
 
         elif order.side == 'sell':

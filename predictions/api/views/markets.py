@@ -419,7 +419,7 @@ class MarketViewSet(viewsets.ReadOnlyModelViewSet):
         except InsufficientFundsError as e:
             return Response({
                 'error': 'insufficient_funds',
-                'message': f"Insufficient balance. You have ${e.available:.2f} available.",
+                'message': f"Insufficient tokens. You have ${e.available:.2f} available.",
                 'available': float(e.available),
             }, status=status.HTTP_400_BAD_REQUEST)
         except InsufficientPositionError as e:
@@ -451,7 +451,7 @@ class MarketViewSet(viewsets.ReadOnlyModelViewSet):
         order_type = data['order_type']
 
         user = request.user
-        user_balance = float(user.available_balance)
+        user_tokens = float(user.available_tokens)
 
         position = Position.objects.filter(user=user, market=market).first()
         user_position = {
@@ -460,7 +460,7 @@ class MarketViewSet(viewsets.ReadOnlyModelViewSet):
         }
 
         result = {
-            'user_balance': user_balance,
+            'user_tokens': user_tokens,
             'user_position': user_position,
             'current_yes_price': market.last_yes_price,
             'current_no_price': market.last_no_price,
@@ -481,8 +481,8 @@ class MarketViewSet(viewsets.ReadOnlyModelViewSet):
                 'implied_probability': price,
             })
 
-            if action == 'buy' and total > user_balance:
-                result['warning'] = f'Insufficient funds. You have ${user_balance:.2f}'
+            if action == 'buy' and total > user_tokens:
+                result['warning'] = f'Insufficient funds. You have ${user_tokens:.2f}'
             elif action == 'sell':
                 available = user_position.get(contract_type, 0)
                 if quantity > available:
@@ -507,8 +507,8 @@ class MarketViewSet(viewsets.ReadOnlyModelViewSet):
                     'implied_probability': current_price,
                 })
 
-                if amount > user_balance:
-                    result['warning'] = f'Insufficient funds. You have ${user_balance:.2f}'
+                if amount > user_tokens:
+                    result['warning'] = f'Insufficient funds. You have ${user_tokens:.2f}'
                 elif shares == 0:
                     result['warning'] = 'Amount too small to purchase any shares'
             else:
@@ -553,15 +553,15 @@ class MarketViewSet(viewsets.ReadOnlyModelViewSet):
                 'message': "Market is not active.",
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        if user.balance < cost:
+        if user.tokens < cost:
             return Response({
                 'error': 'insufficient_funds',
-                'message': f"Insufficient funds. Need ${cost:.2f}, have ${user.balance:.2f}.",
+                'message': f"Insufficient funds. Need ${cost:.2f}, have ${user.tokens:.2f}.",
             }, status=status.HTTP_400_BAD_REQUEST)
 
         # Reserve funds
-        user.balance -= cost
-        user.reserved_balance += cost
+        user.tokens -= cost
+        user.reserved_tokens += cost
         user.save()
 
         # Create mint request order

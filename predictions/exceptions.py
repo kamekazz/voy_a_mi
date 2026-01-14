@@ -7,7 +7,7 @@ class TradingError(Exception):
 
 
 class InsufficientFundsError(TradingError):
-    """Raised when user doesn't have enough balance for an order."""
+    """Raised when user doesn't have enough tokens for an order."""
     def __init__(self, required=None, available=None, message=None):
         if message:
             super().__init__(message)
@@ -15,7 +15,7 @@ class InsufficientFundsError(TradingError):
             self.required = required
             self.available = available
             super().__init__(
-                f"Insufficient funds: required ${required:.2f}, available ${available:.2f}"
+                f"Insufficient tokens: required {required:.2f}, available {available:.2f}"
             )
         else:
             super().__init__(required)  # First arg is the message

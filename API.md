@@ -54,9 +54,9 @@ POST /api/auth/register/
     "email": "john@example.com",
     "first_name": "John",
     "last_name": "Doe",
-    "balance": "0.00",
-    "reserved_balance": "0.00",
-    "available_balance": "0.00",
+    "tokens": "0.00",
+    "reserved_tokens": "0.00",
+    "available_tokens": "0.00",
     "date_joined": "2026-01-03T12:00:00Z"
   },
   "tokens": {
@@ -167,9 +167,9 @@ GET /api/user/profile/
   "email": "john@example.com",
   "first_name": "John",
   "last_name": "Doe",
-  "balance": "100.00",
-  "reserved_balance": "25.00",
-  "available_balance": "75.00",
+  "tokens": "100.00",
+  "reserved_tokens": "25.00",
+  "available_tokens": "75.00",
   "date_joined": "2026-01-03T12:00:00Z"
 }
 ```
@@ -209,9 +209,9 @@ PATCH /api/user/profile/
   "email": "johnny@example.com",
   "first_name": "Johnny",
   "last_name": "Smith",
-  "balance": "100.00",
-  "reserved_balance": "25.00",
-  "available_balance": "75.00",
+  "tokens": "100.00",
+  "reserved_tokens": "25.00",
+  "available_tokens": "75.00",
   "date_joined": "2026-01-03T12:00:00Z"
 }
 ```
@@ -254,9 +254,9 @@ GET /api/user/portfolio/
     }
   ],
   "summary": {
-    "balance": 100.00,
-    "reserved_balance": 25.00,
-    "available_balance": 75.00,
+    "tokens": 100.00,
+    "reserved_tokens": 25.00,
+    "available_tokens": 75.00,
     "total_unrealized_pnl": 0.30,
     "total_realized_pnl": 0.00,
     "positions_count": 1
@@ -309,7 +309,7 @@ GET /api/user/trades/
 
 ### Get Transaction History
 
-Get user's balance transaction history.
+Get user's token transaction history.
 
 ```
 GET /api/user/transactions/
@@ -336,7 +336,7 @@ GET /api/user/transactions/
       "id": 200,
       "type": "trade_buy",
       "amount": "-3.40",
-      "balance_after": "96.60",
+      "tokens_after": "96.60",
       "description": "Bought 5 YES @ $0.68",
       "market_id": 50,
       "market_title": "Will aliens be confirmed in 2025?",
@@ -856,8 +856,8 @@ POST /api/markets/<id>/order-preview/
   "estimated_avg_price": 0.65,
   "potential_profit": 3.50,
   "potential_loss": 6.50,
-  "available_balance": 100.00,
-  "balance_after": 93.50
+  "available_tokens": 100.00,
+  "tokens_after": 93.50
 }
 ```
 
@@ -1059,7 +1059,7 @@ All error responses follow this format:
 
 | Code | HTTP Status | Description |
 |------|-------------|-------------|
-| `insufficient_funds` | 400 | User lacks balance for order |
+| `insufficient_funds` | 400 | User lacks tokens for order |
 | `insufficient_position` | 400 | User lacks shares for sell |
 | `invalid_price` | 400 | Price outside 1-99 cents |
 | `invalid_quantity` | 400 | Quantity must be positive |

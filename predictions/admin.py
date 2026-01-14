@@ -8,22 +8,22 @@ from .models import User, Category, Event, Market, Order, Trade, Position, Trans
 
 @admin.register(User)
 class UserAdmin(BaseUserAdmin):
-    list_display = ['username', 'email', 'first_name', 'last_name', 'balance_display', 'reserved_balance', 'is_staff']
+    list_display = ['username', 'email', 'first_name', 'last_name', 'tokens_display', 'reserved_tokens', 'is_staff']
     list_filter = BaseUserAdmin.list_filter + ('is_active',)
     search_fields = ['username', 'email', 'first_name', 'last_name']
     ordering = ['username']
 
     fieldsets = BaseUserAdmin.fieldsets + (
-        ('Trading Balance', {
-            'fields': ('balance', 'reserved_balance'),
-            'description': 'User trading balance. Edit "balance" to add/remove funds.'
+        ('Trading Tokens', {
+            'fields': ('tokens', 'reserved_tokens'),
+            'description': 'User trading tokens. Edit "tokens" to add/remove funds.'
         }),
     )
 
-    def balance_display(self, obj):
-        return f'${obj.balance:.2f}'
-    balance_display.short_description = 'Balance'
-    balance_display.admin_order_field = 'balance'
+    def tokens_display(self, obj):
+        return f'{obj.tokens:.2f}'
+    tokens_display.short_description = 'Tokens'
+    tokens_display.admin_order_field = 'tokens'
 
 
 @admin.register(Category)

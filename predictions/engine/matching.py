@@ -116,17 +116,17 @@ class MatchingEngine:
         # Validate inputs
         self._validate_order(user, side, contract_type, price, quantity, order_type)
 
-        # Lock user row for balance updates
+        # Lock user row for token updates
         user = User.objects.select_for_update().get(pk=user.pk)
 
         # Calculate and reserve funds for buy orders
         if side == 'buy':
             required_funds = Decimal(price * quantity) / 100
-            if user.available_balance < required_funds:
-                raise InsufficientFundsError(required_funds, user.available_balance)
+            if user.available_tokens < required_funds:
+                raise InsufficientFundsError(required_funds, user.available_tokens)
 
             # Reserve the funds
-            user.reserved_balance += required_funds
+            user.reserved_tokens += required_funds
             user.save()
 
             # Create transaction record for reservation
@@ -134,8 +134,8 @@ class MatchingEngine:
                 user=user,
                 type=Transaction.Type.ORDER_RESERVE,
                 amount=-required_funds,
-                balance_before=user.balance + required_funds,
-                balance_after=user.balance,
+                tokens_before=user.tokens + required_funds,
+                tokens_after=user.tokens,
                 description=f"Reserved for {side.upper()} {quantity} {contract_type.upper()} @ {price}c"
             )
         else:
@@ -402,14 +402,14 @@ class MatchingEngine:
 
         # Release reserved funds and deduct actual costs + fee for YES buyer
         yes_reserved_release = Decimal(yes_order.price) * quantity
-        yes_buyer.reserved_balance -= yes_reserved_release
-        yes_buyer.balance -= (yes_cost + yes_fee)  # Deduct cost plus fee
+        yes_buyer.reserved_tokens -= yes_reserved_release
+        yes_buyer.tokens -= (yes_cost + yes_fee)  # Deduct cost plus fee
         yes_buyer.save()
 
         # Release reserved funds and deduct actual costs + fee for NO buyer
         no_reserved_release = Decimal(no_order.price) * quantity
-        no_buyer.reserved_balance -= no_reserved_release
-        no_buyer.balance -= (no_cost + no_fee)  # Deduct cost plus fee
+        no_buyer.reserved_tokens -= no_reserved_release
+        no_buyer.tokens -= (no_cost + no_fee)  # Deduct cost plus fee
         no_buyer.save()
 
         # Track fees collected by the market
@@ -457,14 +457,14 @@ class MatchingEngine:
             trade_type=Trade.TradeType.MINT
         )
 
-        # Create transaction records (balance was already updated, so calculate before from current)
+        # Create transaction records (tokens was already updated, so calculate before from current)
         yes_total_cost = yes_cost + yes_fee
         Transaction.objects.create(
             user=yes_buyer,
             type=Transaction.Type.MINT_MATCH,
             amount=-yes_cost,
-            balance_before=yes_buyer.balance + yes_total_cost,
-            balance_after=yes_buyer.balance + yes_fee,  # Before fee was deducted
+            tokens_before=yes_buyer.tokens + yes_total_cost,
+            tokens_after=yes_buyer.tokens + yes_fee,  # Before fee was deducted
             trade=trade,
             market=self.market,
             description=f"Minted {quantity} YES @ {yes_price_cents}c (paired with NO buyer)"
@@ -475,8 +475,8 @@ class MatchingEngine:
             user=yes_buyer,
             type=Transaction.Type.TRANSACTION_FEE,
             amount=-yes_fee,
-            balance_before=yes_buyer.balance + yes_fee,
-            balance_after=yes_buyer.balance,
+            tokens_before=yes_buyer.tokens + yes_fee,
+            tokens_after=yes_buyer.tokens,
             trade=trade,
             market=self.market,
             description=f"Transaction fee (2%) on mint of {quantity} YES"
@@ -487,8 +487,8 @@ class MatchingEngine:
             user=no_buyer,
             type=Transaction.Type.MINT_MATCH,
             amount=-no_cost,
-            balance_before=no_buyer.balance + no_total_cost,
-            balance_after=no_buyer.balance + no_fee,  # Before fee was deducted
+            tokens_before=no_buyer.tokens + no_total_cost,
+            tokens_after=no_buyer.tokens + no_fee,  # Before fee was deducted
             trade=trade,
             market=self.market,
             description=f"Minted {quantity} NO @ {no_price_cents}c (paired with YES buyer)"
@@ -499,8 +499,8 @@ class MatchingEngine:
             user=no_buyer,
             type=Transaction.Type.TRANSACTION_FEE,
             amount=-no_fee,
-            balance_before=no_buyer.balance + no_fee,
-            balance_after=no_buyer.balance,
+            tokens_before=no_buyer.tokens + no_fee,
+            tokens_after=no_buyer.tokens,
             trade=trade,
             market=self.market,
             description=f"Transaction fee (2%) on mint of {quantity} NO"
@@ -554,10 +554,10 @@ class MatchingEngine:
         total_fees = yes_fee + no_fee
 
         # Credit sellers (minus fee)
-        yes_seller.balance += (yes_payout - yes_fee)
+        yes_seller.tokens += (yes_payout - yes_fee)
         yes_seller.save()
 
-        no_seller.balance += (no_payout - no_fee)
+        no_seller.tokens += (no_payout - no_fee)
         no_seller.save()
 
         # Track fees collected by the market
@@ -618,8 +618,8 @@ class MatchingEngine:
             user=yes_seller,
             type=Transaction.Type.MERGE_MATCH,
             amount=yes_net_payout,
-            balance_before=yes_seller.balance - yes_net_payout,
-            balance_after=yes_seller.balance,
+            tokens_before=yes_seller.tokens - yes_net_payout,
+            tokens_after=yes_seller.tokens,
             trade=trade,
             market=self.market,
             description=f"Merged {quantity} YES @ {yes_price_cents}c (after 2% fee)"
@@ -630,8 +630,8 @@ class MatchingEngine:
             user=yes_seller,
             type=Transaction.Type.TRANSACTION_FEE,
             amount=-yes_fee,
-            balance_before=yes_seller.balance + yes_fee,
-            balance_after=yes_seller.balance,
+            tokens_before=yes_seller.tokens + yes_fee,
+            tokens_after=yes_seller.tokens,
             trade=trade,
             market=self.market,
             description=f"Transaction fee (2%) on merge of {quantity} YES"
@@ -642,8 +642,8 @@ class MatchingEngine:
             user=no_seller,
             type=Transaction.Type.MERGE_MATCH,
             amount=no_net_payout,
-            balance_before=no_seller.balance - no_net_payout,
-            balance_after=no_seller.balance,
+            tokens_before=no_seller.tokens - no_net_payout,
+            tokens_after=no_seller.tokens,
             trade=trade,
             market=self.market,
             description=f"Merged {quantity} NO @ {no_price_cents}c (after 2% fee)"
@@ -654,8 +654,8 @@ class MatchingEngine:
             user=no_seller,
             type=Transaction.Type.TRANSACTION_FEE,
             amount=-no_fee,
-            balance_before=no_seller.balance + no_fee,
-            balance_after=no_seller.balance,
+            tokens_before=no_seller.tokens + no_fee,
+            tokens_after=no_seller.tokens,
             trade=trade,
             market=self.market,
             description=f"Transaction fee (2%) on merge of {quantity} NO"
@@ -724,22 +724,22 @@ class MatchingEngine:
         # Calculate 2% transaction fee (deducted from seller's proceeds)
         fee_amount = trade_value * self.FEE_PERCENTAGE
 
-        # Update buyer's balance
+        # Update buyer's tokens
         # Release reserved funds (at order's price), deduct actual cost (at execution price)
         buyer_reserved_release = Decimal(buy_order.price) * quantity
-        buyer.reserved_balance -= buyer_reserved_release
+        buyer.reserved_tokens -= buyer_reserved_release
 
-        # The difference between reserved and actual goes back to available balance
+        # The difference between reserved and actual goes back to available tokens
         # (if execution price < order price, buyer saves money)
         savings = buyer_reserved_release - trade_value
         if savings != 0:
-            buyer.balance += savings
+            buyer.tokens += savings
 
         buyer.save()
 
-        # Update seller's balance (receive payment minus fee)
+        # Update seller's tokens (receive payment minus fee)
         seller_proceeds = trade_value - fee_amount
-        seller.balance += seller_proceeds
+        seller.tokens += seller_proceeds
         seller.save()
 
         # Track fee collected by the market
@@ -855,8 +855,8 @@ class MatchingEngine:
             user=buyer,
             type=Transaction.Type.TRADE_BUY,
             amount=-trade_value,
-            balance_before=buyer.balance + trade_value,
-            balance_after=buyer.balance,
+            tokens_before=buyer.tokens + trade_value,
+            tokens_after=buyer.tokens,
             order=trade.buy_order,
             trade=trade,
             market=self.market,
@@ -869,8 +869,8 @@ class MatchingEngine:
             user=seller,
             type=Transaction.Type.TRADE_SELL,
             amount=seller_proceeds,
-            balance_before=seller.balance - seller_proceeds,
-            balance_after=seller.balance,
+            tokens_before=seller.tokens - seller_proceeds,
+            tokens_after=seller.tokens,
             order=trade.sell_order,
             trade=trade,
             market=self.market,
@@ -882,8 +882,8 @@ class MatchingEngine:
             user=seller,
             type=Transaction.Type.TRANSACTION_FEE,
             amount=-fee_amount,
-            balance_before=seller.balance + fee_amount,
-            balance_after=seller.balance,
+            tokens_before=seller.tokens + fee_amount,
+            tokens_after=seller.tokens,
             trade=trade,
             market=self.market,
             description=f"Transaction fee (2%) on sale of {trade.quantity} {trade.contract_type.upper()}"
@@ -959,7 +959,7 @@ class MatchingEngine:
                 f"Order status is {order.get_status_display()}"
             )
 
-        # Lock user for balance update
+        # Lock user for token update
         user = User.objects.select_for_update().get(pk=user.pk)
 
         # Release reserved funds for buy orders (prices are in dollars)
@@ -967,7 +967,7 @@ class MatchingEngine:
             remaining_qty = order.quantity - order.filled_quantity
             release_amount = Decimal(order.price) * remaining_qty
 
-            user.reserved_balance -= release_amount
+            user.reserved_tokens -= release_amount
             user.save()
 
             # Create transaction record
@@ -975,8 +975,8 @@ class MatchingEngine:
                 user=user,
                 type=Transaction.Type.ORDER_RELEASE,
                 amount=release_amount,
-                balance_before=user.balance - release_amount,
-                balance_after=user.balance,
+                tokens_before=user.tokens - release_amount,
+                tokens_after=user.tokens,
                 order=order,
                 description=f"Released funds from cancelled order"
             )
@@ -1065,15 +1065,15 @@ def settle_market(market, outcome):
             user = User.objects.select_for_update().get(pk=order.user.pk)
             remaining_qty = order.quantity - order.filled_quantity
             release_amount = Decimal(order.price) * remaining_qty
-            user.reserved_balance -= release_amount
+            user.reserved_tokens -= release_amount
             user.save()
 
             Transaction.objects.create(
                 user=user,
                 type=Transaction.Type.ORDER_RELEASE,
                 amount=release_amount,
-                balance_before=user.balance,
-                balance_after=user.balance,
+                tokens_before=user.tokens,
+                tokens_after=user.tokens,
                 order=order,
                 market=market,
                 description=f"Released funds from cancelled order (market settled)"
@@ -1109,16 +1109,16 @@ def settle_market(market, outcome):
         # Pay winners
         if winning_qty > 0:
             payout = Decimal(winning_qty)  # $1 per contract
-            balance_before = user.balance
-            user.balance += payout
+            tokens_before = user.tokens
+            user.tokens += payout
             user.save()
 
             Transaction.objects.create(
                 user=user,
                 type=Transaction.Type.SETTLEMENT_WIN,
                 amount=payout,
-                balance_before=balance_before,
-                balance_after=user.balance,
+                tokens_before=tokens_before,
+                tokens_after=user.tokens,
                 market=market,
                 description=f"Won {winning_qty} {outcome.upper()} contracts @ $1 each"
             )
@@ -1132,8 +1132,8 @@ def settle_market(market, outcome):
                 user=user,
                 type=Transaction.Type.SETTLEMENT_LOSS,
                 amount=Decimal('0.00'),
-                balance_before=user.balance,
-                balance_after=user.balance,
+                tokens_before=user.tokens,
+                tokens_after=user.tokens,
                 market=market,
                 description=f"Lost {losing_qty} {'NO' if outcome == 'yes' else 'YES'} contracts (worthless)"
             )
@@ -1182,11 +1182,11 @@ def mint_complete_set(market, user, quantity):
 
     user = User.objects.select_for_update().get(pk=user.pk)
 
-    if user.available_balance < total_cost:
-        raise InsufficientFundsError(total_cost, user.available_balance)
+    if user.available_tokens < total_cost:
+        raise InsufficientFundsError(total_cost, user.available_tokens)
 
-    balance_before = user.balance
-    user.balance -= total_cost
+    tokens_before = user.tokens
+    user.tokens -= total_cost
     user.save()
 
     # Track fee collected by the market
@@ -1232,8 +1232,8 @@ def mint_complete_set(market, user, quantity):
         user=user,
         type=Transaction.Type.MINT,
         amount=-cost,
-        balance_before=balance_before,
-        balance_after=user.balance + fee,  # Before fee was deducted
+        tokens_before=tokens_before,
+        tokens_after=user.tokens + fee,  # Before fee was deducted
         market=market,
         description=f"Minted {quantity} complete sets (YES+NO) @ $1/set"
     )
@@ -1243,8 +1243,8 @@ def mint_complete_set(market, user, quantity):
         user=user,
         type=Transaction.Type.TRANSACTION_FEE,
         amount=-fee,
-        balance_before=user.balance + fee,
-        balance_after=user.balance,
+        tokens_before=user.tokens + fee,
+        tokens_after=user.tokens,
         market=market,
         description=f"Transaction fee (2%) on minting {quantity} complete sets"
     )
@@ -1310,8 +1310,8 @@ def redeem_complete_set(market, user, quantity):
     position.save()
 
     # Credit user (minus fee)
-    balance_before = user.balance
-    user.balance += net_payout
+    tokens_before = user.tokens
+    user.tokens += net_payout
     user.save()
 
     # Track fee collected by the market
@@ -1328,8 +1328,8 @@ def redeem_complete_set(market, user, quantity):
         user=user,
         type=Transaction.Type.REDEEM,
         amount=net_payout,
-        balance_before=balance_before,
-        balance_after=user.balance,
+        tokens_before=tokens_before,
+        tokens_after=user.tokens,
         market=market,
         description=f"Redeemed {quantity} complete sets (YES+NO) @ $1/set (after 2% fee)"
     )
@@ -1339,8 +1339,8 @@ def redeem_complete_set(market, user, quantity):
         user=user,
         type=Transaction.Type.TRANSACTION_FEE,
         amount=-fee,
-        balance_before=balance_before + payout,
-        balance_after=user.balance,
+        tokens_before=tokens_before + payout,
+        tokens_after=user.tokens,
         market=market,
         description=f"Transaction fee (2%) on redemption of {quantity} complete sets"
     )

@@ -7,28 +7,28 @@ from decimal import Decimal
 
 class User(AbstractUser):
     """Custom user model for the prediction market platform."""
-    balance = models.DecimalField(
+    tokens = models.DecimalField(
         max_digits=12,
         decimal_places=2,
         default=Decimal('0.00'),
-        help_text="User's available balance in dollars"
+        help_text="User's available tokens"
     )
-    reserved_balance = models.DecimalField(
+    reserved_tokens = models.DecimalField(
         max_digits=12,
         decimal_places=2,
         default=Decimal('0.00'),
-        help_text="Funds locked in open buy orders"
+        help_text="Tokens locked in open buy orders"
     )
 
     @property
-    def available_balance(self):
-        """Balance available for new orders."""
-        return self.balance - self.reserved_balance
+    def available_tokens(self):
+        """Tokens available for new orders."""
+        return self.tokens - self.reserved_tokens
 
     @property
-    def total_balance(self):
-        """Total balance including reserved funds."""
-        return self.balance
+    def total_tokens(self):
+        """Total tokens including reserved funds."""
+        return self.tokens
 
 
 class Category(models.Model):
@@ -529,8 +529,8 @@ class Position(models.Model):
 
 class Transaction(models.Model):
     """
-    Tracks all balance changes for audit trail.
-    Every change to user balance is recorded here.
+    Tracks all token changes for audit trail.
+    Every change to user tokens is recorded here.
     """
     class Type(models.TextChoices):
         DEPOSIT = 'deposit', 'Deposit'
@@ -549,6 +549,8 @@ class Transaction(models.Model):
         MERGE_MATCH = 'merge_match', 'Merge via Order Match'
         # Transaction fee
         TRANSACTION_FEE = 'transaction_fee', 'Transaction Fee'
+        # Event rewards
+        EVENT_REWARD = 'event_reward', 'Event Reward'
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -563,8 +565,8 @@ class Transaction(models.Model):
         help_text="Positive for credit, negative for debit"
     )
 
-    balance_before = models.DecimalField(max_digits=12, decimal_places=2)
-    balance_after = models.DecimalField(max_digits=12, decimal_places=2)
+    tokens_before = models.DecimalField(max_digits=12, decimal_places=2)
+    tokens_after = models.DecimalField(max_digits=12, decimal_places=2)
 
     # References to related objects
     order = models.ForeignKey(
