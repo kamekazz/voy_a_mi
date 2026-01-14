@@ -367,13 +367,13 @@ class PositionAdmin(admin.ModelAdmin):
 class TransactionAdmin(admin.ModelAdmin):
     list_display = [
         'id', 'user_link', 'type', 'amount_display',
-        'balance_before', 'balance_after', 'created_at'
+        'tokens_before', 'tokens_after', 'created_at'
     ]
     list_filter = ['type', 'created_at']
     search_fields = ['user__username', 'description']
     raw_id_fields = ['user', 'order', 'trade', 'market']
     readonly_fields = [
-        'user', 'type', 'amount', 'balance_before', 'balance_after',
+        'user', 'type', 'amount', 'tokens_before', 'tokens_after',
         'order', 'trade', 'market', 'description', 'created_at'
     ]
     date_hierarchy = 'created_at'
