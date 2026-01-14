@@ -1,5 +1,5 @@
 """
-URL configuration for market_project project.
+URL configuration for root project.
 
 This is a pure REST API project for mobile apps.
 All API endpoints are available under /api/
