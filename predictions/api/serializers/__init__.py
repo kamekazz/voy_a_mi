@@ -20,6 +20,14 @@ from .trading import (
     OrderPreviewSerializer,
 )
 from .transaction import TransactionSerializer
+from .verification import (
+    StartRegistrationSerializer,
+    ConfirmRegistrationSerializer,
+    StartLoginSerializer,
+    ConfirmLoginSerializer,
+    VerificationResponseSerializer,
+    AuthResponseSerializer,
+)
 
 __all__ = [
     'UserSerializer',
@@ -38,4 +46,10 @@ __all__ = [
     'MintRedeemSerializer',
     'OrderPreviewSerializer',
     'TransactionSerializer',
+    'StartRegistrationSerializer',
+    'ConfirmRegistrationSerializer',
+    'StartLoginSerializer',
+    'ConfirmLoginSerializer',
+    'VerificationResponseSerializer',
+    'AuthResponseSerializer',
 ]

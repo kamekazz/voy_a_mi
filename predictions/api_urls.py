@@ -6,14 +6,13 @@ All endpoints are prefixed with /api/ in the main urls.py
 
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from rest_framework_simplejwt.views import TokenRefreshView
 from drf_spectacular.views import (
     SpectacularAPIView,
     SpectacularSwaggerView,
     SpectacularRedocView,
 )
 
-from predictions.api.views.auth import RegisterView
 from predictions.api.views.markets import CategoryViewSet, EventViewSet, MarketViewSet
 from predictions.api.views.trading import OrderViewSet
 from predictions.api.views.user import (
@@ -21,6 +20,12 @@ from predictions.api.views.user import (
     PortfolioView,
     UserTradesView,
     UserTransactionsView,
+)
+from predictions.api.views.verification import (
+    StartRegistrationView,
+    ConfirmRegistrationView,
+    StartLoginView,
+    ConfirmLoginView,
 )
 
 # Create router and register viewsets
@@ -34,9 +39,11 @@ urlpatterns = [
     # Router URLs (categories, events, markets, orders)
     path('', include(router.urls)),
 
-    # Authentication endpoints
-    path('auth/register/', RegisterView.as_view(), name='auth-register'),
-    path('auth/login/', TokenObtainPairView.as_view(), name='auth-login'),
+    # Phone verification authentication endpoints
+    path('auth/register/start/', StartRegistrationView.as_view(), name='register-start'),
+    path('auth/register/confirm/', ConfirmRegistrationView.as_view(), name='register-confirm'),
+    path('auth/login/start/', StartLoginView.as_view(), name='login-start'),
+    path('auth/login/confirm/', ConfirmLoginView.as_view(), name='login-confirm'),
     path('auth/refresh/', TokenRefreshView.as_view(), name='auth-refresh'),
 
     # User endpoints

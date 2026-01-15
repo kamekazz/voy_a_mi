@@ -7,6 +7,13 @@ from decimal import Decimal
 
 class User(AbstractUser):
     """Custom user model for the prediction market platform."""
+    phone_number = models.CharField(
+        max_length=20,
+        unique=True,
+        null=True,
+        blank=True,
+        help_text="Phone number in E.164 format (e.g., +1234567890)"
+    )
     tokens = models.DecimalField(
         max_digits=12,
         decimal_places=2,
@@ -635,3 +642,55 @@ class UserPreferences(models.Model):
 
     def __str__(self):
         return f"{self.user.username} - {self.get_ui_mode_display()}"
+
+
+class PendingVerification(models.Model):
+    """
+    Temporary record for phone verification during registration/login.
+    Stores verification codes and tracks attempts.
+    """
+    class Type(models.TextChoices):
+        REGISTRATION = 'registration', 'Registration'
+        LOGIN = 'login', 'Login'
+
+    class Status(models.TextChoices):
+        PENDING = 'pending', 'Pending'
+        VERIFIED = 'verified', 'Verified'
+        EXPIRED = 'expired', 'Expired'
+        LOCKED = 'locked', 'Locked'
+
+    type = models.CharField(max_length=20, choices=Type.choices)
+    username = models.CharField(max_length=150, blank=True)
+    phone_number = models.CharField(max_length=20)
+    code_hash = models.CharField(max_length=128)
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.PENDING
+    )
+    expires_at = models.DateTimeField()
+    request_count = models.PositiveIntegerField(default=1)
+    failed_attempts = models.PositiveIntegerField(default=0)
+    last_request_at = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Pending Verification"
+        verbose_name_plural = "Pending Verifications"
+        indexes = [
+            models.Index(fields=['phone_number', 'type', 'status']),
+            models.Index(fields=['expires_at']),
+        ]
+
+    def __str__(self):
+        return f"{self.phone_number} - {self.type} ({self.status})"
+
+    @property
+    def is_expired(self):
+        """Check if the verification has expired."""
+        return timezone.now() > self.expires_at
+
+    @property
+    def is_locked(self):
+        """Check if too many failed attempts."""
+        return self.failed_attempts >= 5
