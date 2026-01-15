@@ -143,9 +143,3 @@ def check_verification_code(phone_number: str, code: str) -> bool:
     except Exception as e:
         logger.error(f"Error checking verification for {phone_number}: {e}")
         raise
-
-
-def generate_verification_code() -> str:
-    """Generate a random 6-digit verification code. (Legacy - not used with Verify API)"""
-    import random
-    return str(random.randint(100000, 999999))

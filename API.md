@@ -10,16 +10,18 @@ All authenticated endpoints require a JWT token in the Authorization header:
 Authorization: Bearer <access_token>
 ```
 
+This API uses **passwordless phone authentication** via SMS verification codes powered by Twilio Verify.
+
 ---
 
 ## Authentication Endpoints
 
-### Register New User
+### Start Registration
 
-Create a new user account and receive JWT tokens.
+Begin registration by sending a verification code to the user's phone.
 
 ```
-POST /api/auth/register/
+POST /api/auth/register/start/
 ```
 
 **Authentication:** None required
@@ -28,22 +30,58 @@ POST /api/auth/register/
 ```json
 {
   "username": "johndoe",
-  "email": "john@example.com",
-  "password": "SecurePass123",
-  "password_confirm": "SecurePass123",
-  "first_name": "John",
-  "last_name": "Doe"
+  "phone_number": "+18456307620"
 }
 ```
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| username | string | Yes | Unique username (alphanumeric) |
-| email | string | Yes | Valid email address |
-| password | string | Yes | Password (min 8 chars, not common) |
-| password_confirm | string | Yes | Must match password |
-| first_name | string | No | User's first name |
-| last_name | string | No | User's last name |
+| username | string | Yes | Unique username (3-30 chars, alphanumeric + underscore) |
+| phone_number | string | Yes | Phone number (any format, normalized to E.164) |
+
+**Response (201 Created):**
+```json
+{
+  "message": "Verification code sent",
+  "phone_number": "+18456307620",
+  "expires_in": 600
+}
+```
+
+**Error Responses:**
+
+| Status | Code | Description |
+|--------|------|-------------|
+| 400 | `username_taken` | Username already exists |
+| 400 | `phone_registered` | Phone number already registered |
+| 400 | `invalid_phone` | Invalid phone number format |
+| 429 | `rate_limit_exceeded` | Too many requests (max 5/hour) |
+| 429 | `cooldown_active` | Must wait before requesting another code |
+
+---
+
+### Confirm Registration
+
+Verify the code and create the user account.
+
+```
+POST /api/auth/register/confirm/
+```
+
+**Authentication:** None required
+
+**Request Body:**
+```json
+{
+  "phone_number": "+18456307620",
+  "code": "123456"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| phone_number | string | Yes | Phone number used in start registration |
+| code | string | Yes | 6-digit verification code from SMS |
 
 **Response (201 Created):**
 ```json
@@ -51,38 +89,36 @@ POST /api/auth/register/
   "user": {
     "id": 1,
     "username": "johndoe",
-    "email": "john@example.com",
-    "first_name": "John",
-    "last_name": "Doe",
-    "tokens": "0.00",
-    "reserved_tokens": "0.00",
-    "available_tokens": "0.00",
-    "date_joined": "2026-01-03T12:00:00Z"
+    "phone_number": "+18456307620",
+    "tokens": "500.00",
+    "available_tokens": "500.00"
   },
   "tokens": {
     "access": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
     "refresh": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
-  },
-  "message": "Account created successfully."
+  }
 }
 ```
 
-**Error Response (400 Bad Request):**
-```json
-{
-  "username": ["A user with this username already exists."],
-  "password": ["This password is too common."]
-}
-```
+**Note:** New users automatically receive **500 tokens** as a registration bonus.
+
+**Error Responses:**
+
+| Status | Code | Description |
+|--------|------|-------------|
+| 400 | `invalid_code` | Verification code is incorrect |
+| 400 | `code_expired` | Verification code has expired (10 min limit) |
+| 400 | `username_taken` | Username was taken during verification |
+| 404 | `verification_not_found` | No pending verification found |
 
 ---
 
-### Login
+### Start Login
 
-Get JWT access and refresh tokens.
+Begin login by sending a verification code to an existing user's phone.
 
 ```
-POST /api/auth/login/
+POST /api/auth/login/start/
 ```
 
 **Authentication:** None required
@@ -90,30 +126,82 @@ POST /api/auth/login/
 **Request Body:**
 ```json
 {
-  "username": "johndoe",
-  "password": "SecurePass123"
+  "phone_number": "+18456307620"
 }
 ```
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| username | string | Yes | Username |
-| password | string | Yes | Password |
+| phone_number | string | Yes | Phone number of existing account |
 
 **Response (200 OK):**
 ```json
 {
-  "access": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
-  "refresh": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
+  "message": "Verification code sent",
+  "phone_number": "+18456307620",
+  "expires_in": 600
 }
 ```
 
-**Error Response (401 Unauthorized):**
+**Error Responses:**
+
+| Status | Code | Description |
+|--------|------|-------------|
+| 400 | `user_not_found` | No account with this phone number |
+| 400 | `invalid_phone` | Invalid phone number format |
+| 429 | `rate_limit_exceeded` | Too many requests (max 5/hour) |
+| 429 | `cooldown_active` | Must wait before requesting another code |
+
+---
+
+### Confirm Login
+
+Verify the code and receive JWT tokens.
+
+```
+POST /api/auth/login/confirm/
+```
+
+**Authentication:** None required
+
+**Request Body:**
 ```json
 {
-  "detail": "No active account found with the given credentials"
+  "phone_number": "+18456307620",
+  "code": "123456"
 }
 ```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| phone_number | string | Yes | Phone number used in start login |
+| code | string | Yes | 6-digit verification code from SMS |
+
+**Response (200 OK):**
+```json
+{
+  "user": {
+    "id": 1,
+    "username": "johndoe",
+    "phone_number": "+18456307620",
+    "tokens": "500.00",
+    "available_tokens": "500.00"
+  },
+  "tokens": {
+    "access": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+    "refresh": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
+  }
+}
+```
+
+**Error Responses:**
+
+| Status | Code | Description |
+|--------|------|-------------|
+| 400 | `invalid_code` | Verification code is incorrect |
+| 400 | `code_expired` | Verification code has expired (10 min limit) |
+| 404 | `verification_not_found` | No pending verification found |
+| 404 | `user_not_found` | User account not found |
 
 ---
 
@@ -164,13 +252,14 @@ GET /api/user/profile/
 {
   "id": 1,
   "username": "johndoe",
-  "email": "john@example.com",
-  "first_name": "John",
-  "last_name": "Doe",
-  "tokens": "100.00",
+  "phone_number": "+18456307620",
+  "email": null,
+  "first_name": "",
+  "last_name": "",
+  "tokens": "500.00",
   "reserved_tokens": "25.00",
-  "available_tokens": "75.00",
-  "date_joined": "2026-01-03T12:00:00Z"
+  "available_tokens": "475.00",
+  "date_joined": "2026-01-14T12:00:00Z"
 }
 ```
 
@@ -189,9 +278,9 @@ PATCH /api/user/profile/
 **Request Body:**
 ```json
 {
-  "first_name": "Johnny",
-  "last_name": "Smith",
-  "email": "johnny@example.com"
+  "first_name": "John",
+  "last_name": "Doe",
+  "email": "john@example.com"
 }
 ```
 
@@ -206,13 +295,14 @@ PATCH /api/user/profile/
 {
   "id": 1,
   "username": "johndoe",
-  "email": "johnny@example.com",
-  "first_name": "Johnny",
-  "last_name": "Smith",
-  "tokens": "100.00",
+  "phone_number": "+18456307620",
+  "email": "john@example.com",
+  "first_name": "John",
+  "last_name": "Doe",
+  "tokens": "500.00",
   "reserved_tokens": "25.00",
-  "available_tokens": "75.00",
-  "date_joined": "2026-01-03T12:00:00Z"
+  "available_tokens": "475.00",
+  "date_joined": "2026-01-14T12:00:00Z"
 }
 ```
 
@@ -254,9 +344,9 @@ GET /api/user/portfolio/
     }
   ],
   "summary": {
-    "tokens": 100.00,
+    "tokens": 500.00,
     "reserved_tokens": 25.00,
-    "available_tokens": 75.00,
+    "available_tokens": 475.00,
     "total_unrealized_pnl": 0.30,
     "total_realized_pnl": 0.00,
     "positions_count": 1
@@ -323,7 +413,7 @@ GET /api/user/transactions/
 | type | string | Filter by transaction type |
 | market | integer | Filter by market ID |
 
-**Transaction Types:** `deposit`, `withdrawal`, `trade_buy`, `trade_sell`, `settlement_win`, `settlement_loss`, `order_reserve`, `order_release`, `refund`, `mint`, `redeem`, `mint_match`, `merge_match`
+**Transaction Types:** `deposit`, `withdrawal`, `trade_buy`, `trade_sell`, `settlement_win`, `settlement_loss`, `order_reserve`, `order_release`, `refund`, `mint`, `redeem`, `mint_match`, `merge_match`, `event_reward`
 
 **Response (200 OK):**
 ```json
@@ -336,7 +426,7 @@ GET /api/user/transactions/
       "id": 200,
       "type": "trade_buy",
       "amount": "-3.40",
-      "tokens_after": "96.60",
+      "tokens_after": "496.60",
       "description": "Bought 5 YES @ $0.68",
       "market_id": 50,
       "market_title": "Will aliens be confirmed in 2025?",
@@ -372,7 +462,7 @@ GET /api/categories/
       "name": "Politics",
       "slug": "politics",
       "description": "Political events and elections",
-      "icon": "🚨",
+      "icon": "fa-landmark",
       "display_order": 1,
       "event_count": 10
     }
@@ -399,7 +489,7 @@ GET /api/categories/<slug>/
   "name": "Politics",
   "slug": "politics",
   "description": "Political events and elections",
-  "icon": "🚨",
+  "icon": "fa-landmark",
   "display_order": 1,
   "event_count": 10
 }
@@ -856,8 +946,8 @@ POST /api/markets/<id>/order-preview/
   "estimated_avg_price": 0.65,
   "potential_profit": 3.50,
   "potential_loss": 6.50,
-  "available_tokens": 100.00,
-  "tokens_after": 93.50
+  "available_tokens": 500.00,
+  "tokens_after": 493.50
 }
 ```
 
@@ -1068,6 +1158,33 @@ All error responses follow this format:
 | `order_not_cancellable` | 400 | Order cannot be cancelled |
 | `self_trade_error` | 400 | Cannot trade with yourself |
 
+### Authentication Error Codes
+
+| Code | HTTP Status | Description |
+|------|-------------|-------------|
+| `username_taken` | 400 | Username already exists |
+| `phone_registered` | 400 | Phone already registered |
+| `user_not_found` | 400/404 | No account with this phone |
+| `invalid_phone` | 400 | Invalid phone number format |
+| `invalid_code` | 400 | Verification code incorrect |
+| `code_expired` | 400 | Code expired (10 min limit) |
+| `verification_not_found` | 404 | No pending verification |
+| `rate_limit_exceeded` | 429 | Too many requests |
+| `cooldown_active` | 429 | Must wait before retrying |
+
+---
+
+## Rate Limits
+
+### Authentication Endpoints
+| Limit | Description |
+|-------|-------------|
+| 5 requests/hour | Per phone number for verification codes |
+| 30 second cooldown | Between code requests |
+
+### Other Endpoints
+Currently no rate limits are enforced. This may change in production.
+
 ---
 
 ## Polling Recommendations
@@ -1081,12 +1198,6 @@ Since this API uses polling instead of WebSockets:
 | Portfolio | 10-30 seconds |
 | Market list | 30-60 seconds |
 | Price history | 60 seconds |
-
----
-
-## Rate Limits
-
-Currently no rate limits are enforced. This may change in production.
 
 ---
 

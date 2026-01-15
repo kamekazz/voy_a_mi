@@ -1,7 +1,7 @@
 from .user import (
     UserSerializer,
     UserProfileSerializer,
-    UserRegistrationSerializer,
+    UserPreferencesSerializer,
 )
 from .market import (
     CategorySerializer,
@@ -32,7 +32,7 @@ from .verification import (
 __all__ = [
     'UserSerializer',
     'UserProfileSerializer',
-    'UserRegistrationSerializer',
+    'UserPreferencesSerializer',
     'CategorySerializer',
     'EventListSerializer',
     'EventDetailSerializer',
